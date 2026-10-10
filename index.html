@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>森林跃跃 · Forest Hop</title>
+    <link rel="stylesheet" href="src/style.css">
+    <script src="src/game.js" defer></script>
+</head>
+<body>
+    <main id="playfield">
+        <canvas id="board" aria-label="森林跃跃游戏"></canvas>
+        <header class="hud">
+            <button id="profile-button"><span id="player-name">森林旅人</span><small>个人主页</small></button>
+            <div class="score-panel"><span>本次得分 <strong id="current-score">0</strong></span><small>最高分 <b id="best-score">0</b></small></div>
+        </header>
+        <button id="ranking" class="ranking-button">排行榜</button>
+        <div class="controls">
+            <button id="left" aria-label="向左">❮</button>
+            <button id="right" aria-label="向右">❯</button>
+        </div>
+        <p>按住左右移动 · 滑动换向 · 黄色弹簧跳得更高</p>
+        <dialog id="profile">
+            <div class="modal-header">FOREST HOP</div>
+            <h1>个人主页</h1>
+            <div id="profile-summary"></div>
+            <form id="profile-form">
+                <label for="nickname">昵称</label>
+                <input id="nickname" name="nickname" maxlength="12" required placeholder="输入昵称（最多 12 个字）" autocomplete="nickname">
+                <div class="modal-actions"><button type="button" id="close-profile">返回游戏</button><button type="submit" id="save-nickname">确认名称</button></div>
+                <div id="profile-message" role="status"></div>
+            </form>
+            <small>昵称与成绩保存在当前浏览器</small>
+        </dialog>
+        <dialog id="upload-confirm">
+            <h1>是否上传记录？</h1>
+            <div id="upload-summary"></div>
+            <p class="upload-note">选“是”后前往 GitHub 登录并确认发布</p>
+            <div class="modal-actions"><button id="upload-no">否</button><button id="upload-yes">是</button></div>
+        </dialog>
+        <dialog id="result">
+            <div class="modal-header">FOREST HOP</div>
+            <h1 id="result-title">游戏结束</h1>
+            <div id="result-summary" aria-live="polite"></div>
+            <div class="ranking-tabs"><button id="local-ranking">本机排行</button><button id="online-ranking">联机排行</button></div>
+            <h2 id="ranking-title">本机排行榜 · 前 10 名</h2>
+            <div id="ranking-status" role="status"></div>
+            <ol id="rank-list"></ol>
+            <a id="submit-score" target="_blank" rel="noopener noreferrer" hidden>提交本次成绩到 GitHub</a>
+            <div class="modal-actions">
+                <button id="close-result">返回</button>
+                <button id="play-again">再玩一次</button>
+            </div>
+            <small>本机成绩自动保存；联机成绩由玩家提交，未经验证</small>
+        </dialog>
+    </main>
+</body>
+</html>
