@@ -9,7 +9,7 @@ const document = {
     getElementById(id) {
         if (!elements.has(id)) elements.set(id, {
             open: false, classList: { remove() {}, toggle() {} }, addEventListener() {},
-            getContext() { return {}; }, showModal() { this.open = true; },
+            getContext() { return {}; }, showModal() { this.open = true; }, close() { this.open = false; },
             replaceChildren() {}, append() {}
         });
         return elements.get(id);
@@ -31,12 +31,21 @@ const sandbox = vm.createContext({
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8"), sandbox);
 
 const checked = vm.runInContext(`
-    let checked = 0, mandatory = 0, hazards = 0;
+    let checked = 0, mandatory = 0, hazards = 0, moving = 0, bombs = 0;
     for (let route = 0; route < 100; route++) {
         let source = makePlatform(526, 150);
-        for (let index = 0; index < 160; index++) {
+        bonusScore = 0;
+        for (let index = 0; index < 600; index++) {
             const target = nextPlatform(source);
             if (target.hazard) hazards++;
+            if (target.hazard?.kind === "bomb") bombs++;
+            if (target.motion) {
+                moving++;
+                if (target.spring || target.fragile || source.spring || source.motion) throw new Error("Unsafe moving section");
+                // Cover both motion extremes and random phases instead of only the generator's phase.
+                target.motion.phase = route % 3 === 0 ? Math.PI / 2 : route % 3 === 1 ? -Math.PI / 2 : Math.random() * Math.PI * 2;
+                target.x = target.motion.baseX + Math.sin(target.motion.phase) * target.motion.amplitude;
+            }
             const gap = source.y - target.y;
             if (source.requiredSpring) {
                 mandatory++;
@@ -53,6 +62,8 @@ const checked = vm.runInContext(`
             highest = player.y;
             gameOver = false;
             let landed = false;
+            result.open = false;
+            uploadConfirm.open = false;
             for (let tick = 0; tick < 200; tick++) {
                 keys.clear();
                 const delta = target.x + 7 - player.x;
@@ -74,16 +85,45 @@ const checked = vm.runInContext(`
             checked++;
         }
     }
+    bonusScore = 0;
     player = { x: 140, y: 200, width: 46, height: 46, vy: 0, facing: 1, jumpTime: 0 };
     platforms = [makePlatform(300, 140), makePlatform(-10000, 140)];
-    platforms[0].hazard = { x: 163, y: 223, radius: 15 };
+    platforms[0].item = { kind: "diamond", x: 163, y: 223, radius: 10, collected: false };
+    camera = 0;
+    gameOver = false;
+    step(1 / 120);
+    if (bonusScore !== 30) throw new Error("Diamond bonus missing");
+    step(1 / 120);
+    if (bonusScore !== 30) throw new Error("Pickup counted twice");
+    platforms[0].item = { kind: "pinecone", x: 163, y: 223, radius: 10, collected: false };
+    step(1 / 120);
+    if (bonusScore !== 40) throw new Error("Pinecone bonus missing");
+    highest = -100000;
+    if (movingSpeed() !== 36) throw new Error("Moving speed cap missing");
+    player = { x: 140, y: 200, width: 46, height: 46, vy: 0, facing: 1, jumpTime: 0 };
+    platforms = [makePlatform(300, 140), makePlatform(-10000, 140)];
+    platforms[0].hazard = { x: 163, y: 223, radius: 15, kind: "bomb" };
     camera = 0;
     gameOver = false;
     step(1 / 120);
     if (!gameOver) throw new Error("Obstacle collision did not end game");
-    ({ checked, mandatory, hazards });
+    bonusScore = 3000;
+    restart();
+    if (score() !== 0 || platforms.some(platform => platform.motion))
+        throw new Error("Restart retained previous difficulty or score");
+    highest = 458 - 1999 * 10;
+    let lowSource = makePlatform(-30000, 150);
+    for (let i = 0; i < 100; i++) {
+        lowSource = nextPlatform(lowSource);
+        if (lowSource.motion) throw new Error("Moving platform appeared before 2000 points");
+    }
+    highest = 458 - 2000 * 10;
+    if (movingSpeed() !== 12) throw new Error("Moving speed should start slowly");
+    ({ checked, mandatory, hazards, moving, bombs });
 `, sandbox);
-assert.equal(checked.checked, 16000);
+assert.equal(checked.checked, 60000);
 assert(checked.mandatory > 0);
 assert(checked.hazards > 0);
-console.log(`Passed: ${checked.checked} reachable jumps, ${checked.mandatory} spring sections, ${checked.hazards} obstacle sections and obstacle collision.`);
+assert(checked.moving > 0);
+assert(checked.bombs > 0);
+console.log(`Passed: ${checked.checked} reachable jumps, ${checked.mandatory} spring sections, ${checked.moving} moving sections, ${checked.bombs} bombs; pickups, collision and speed cap.`);

@@ -20,10 +20,12 @@ const platformImage = new Image();
 const springImage = new Image();
 const brokenImage = new Image();
 const backgroundImage = new Image();
+const diamondImage = new Image(), pineconeImage = new Image(), bombImage = new Image();
 const assets = [
     [squirrelImage, "squirrel-jump-sheet.webp"], [platformImage, "platform-wood.webp"],
     [springImage, "spring.webp"], [brokenImage, "platform-broken-wood.webp"],
-    [backgroundImage, "forest-background.webp"]
+    [backgroundImage, "forest-warm.webp"], [diamondImage, "diamond.webp"],
+    [pineconeImage, "pinecone.webp"], [bombImage, "bomb.webp"]
 ];
 
 const gravity = 1440, jumpSpeed = -480, springSpeed = -900;
@@ -32,7 +34,12 @@ const pointers = new Map();
 let player, platforms, camera, highest, gameOver, lastTime;
 let accumulator = 0;
 let fragments = [];
+let bonusScore = 0;
+let pickupEffects = [];
 const result = document.getElementById("result");
+const uploadConfirm = document.getElementById("upload-confirm");
+const scoresUrl = "https://forest-hop-d2g5ydn2ydb209f8a-1466119337.ap-shanghai.app.tcloudbase.com/forest-hop-api/scores";
+let completedRun, uploaded = false, uploading = false, rankingRequest = 0;
 const profile = document.getElementById("profile");
 const currentScore = document.getElementById("current-score");
 const bestScore = document.getElementById("best-score");
@@ -50,11 +57,12 @@ try {
         { name: nickname, score: value } : value)
         .filter(value => value && Number.isInteger(value.score) && value.score >= 0 && typeof value.name === "string")
         .map(value => ({ name: value.name.trim().slice(0, 12) || "森林旅人", score: value.score }))
-        .sort((a, b) => b.score - a.score).slice(0, 10);
+        .sort((a, b) => b.score - a.score).slice(0, 3);
+    localStorage.setItem("forest-hop-scores", JSON.stringify(records));
 } catch { /* Storage may be unavailable; keep scores for this session. */ }
 
 function score() {
-    return Math.max(0, Math.floor((458 - highest) / 10));
+    return Math.max(0, Math.floor((458 - highest) / 10)) + bonusScore;
 }
 
 function clearControls() {
@@ -88,15 +96,70 @@ function renderRanking(values) {
 }
 
 function showLocalRanking() {
-    document.getElementById("ranking-title").textContent = "本机排行榜 · 前 10 名";
+    rankingRequest++;
+    document.getElementById("ranking-title").textContent = "本机排行榜 · 前 3 名";
     document.getElementById("ranking-status").textContent = "";
+    document.getElementById("ranking-self").textContent = "";
     renderRanking(records);
 }
 
-function showOnlineRanking() {
-    document.getElementById("ranking-title").textContent = "联机排行 · 未开放";
+async function requestScores(options = {}) {
+    const url = options.method === "POST" ? scoresUrl : scoresUrl + "?name=" + encodeURIComponent(nickname);
+    const response = await fetch(url, { ...options, signal: AbortSignal.timeout(25000) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "排行服务暂时不可用");
+    return data;
+}
+
+async function showOnlineRanking() {
+    const request = ++rankingRequest;
+    document.getElementById("ranking-title").textContent = "联机排行榜 · 同名最高分";
     document.getElementById("rank-list").replaceChildren();
-    document.getElementById("ranking-status").textContent = "联机排行暂未开放，成绩仅保存在本机";
+    document.getElementById("ranking-self").textContent = "";
+    const status = document.getElementById("ranking-status");
+    status.textContent = "正在读取…";
+    try {
+        const data = await requestScores();
+        if (request !== rankingRequest) return;
+        renderRanking(data.records);
+        status.textContent = "同名玩家取最高分 · 前 10 名";
+        document.getElementById("ranking-self").textContent = data.self ?
+            "我的名次：第 " + data.self.rank + " 名 · 最高分 " + data.self.score : "我的名次：尚未上传成绩";
+    } catch (error) {
+        if (request === rankingRequest) status.textContent = error.name === "TimeoutError" ?
+            "读取超时，请稍后重试；本机成绩仍保留" : "连接失败，请稍后重试；本机成绩仍保留";
+    }
+}
+
+function showUploadConfirm() {
+    if (!completedRun || uploaded || uploading) return;
+    document.getElementById("upload-summary").textContent = completedRun.name + " · " + completedRun.score + " 分";
+    document.getElementById("upload-status").textContent = "";
+    uploadConfirm.showModal();
+}
+
+async function uploadScore() {
+    if (!completedRun || uploaded || uploading) return;
+    uploading = true;
+    document.getElementById("confirm-upload").disabled = true;
+    document.getElementById("cancel-upload").disabled = true;
+    const status = document.getElementById("upload-status");
+    status.textContent = "正在上传…";
+    try {
+        await requestScores({ method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(completedRun) });
+        uploaded = true;
+        document.getElementById("submit-score").hidden = true;
+        uploadConfirm.close();
+        showOnlineRanking();
+    } catch (error) {
+        status.textContent = error.name === "TimeoutError" ? "请求超时，可以重试；同名记录只保留最高分" :
+            error instanceof TypeError ? "连接失败，请检查网络后重试；本机成绩已保存" : error.message;
+    } finally {
+        uploading = false;
+        document.getElementById("confirm-upload").disabled = false;
+        document.getElementById("cancel-upload").disabled = false;
+    }
 }
 
 function showResult(ended) {
@@ -109,16 +172,19 @@ function showResult(ended) {
     showLocalRanking();
     document.getElementById("close-result").textContent = ended ? "查看场景" : "继续游戏";
     document.getElementById("play-again").hidden = !gameOver;
+    document.getElementById("submit-score").hidden = !gameOver || uploaded;
     if (!result.open) result.showModal();
 }
 
 function finish() {
     gameOver = true;
-    records.push({ name: nickname, score: score() });
+    completedRun = Object.freeze({ name: nickname, score: score() });
+    records.push(completedRun);
     records.sort((a, b) => b.score - a.score);
-    records = records.slice(0, 10);
+    records = records.slice(0, 3);
     try { localStorage.setItem("forest-hop-scores", JSON.stringify(records)); } catch {}
     showResult(true);
+    showUploadConfirm();
 }
 
 function makePlatform(y, x, spring = false, fragile = false) {
@@ -130,7 +196,7 @@ function nextPlatform(previous) {
     const routeScore = Math.max(0, (526 - previous.y) / 10);
     const difficulty = Math.min(1, routeScore / 300);
     const springGap = previous.spring && routeScore >= 120;
-    const spring = !previous.spring && !springGap && Math.random() < 0.18 + difficulty * 0.08;
+    const spring = !previous.spring && !previous.motion && !springGap && Math.random() < 0.18 + difficulty * 0.08;
     // A spring target is 20px above its board; reserve that height on ordinary jumps.
     const gap = springGap ? 150 + difficulty * 60 + Math.random() * 10 :
         50 + difficulty * 18 - (spring ? 20 : 0);
@@ -138,39 +204,57 @@ function nextPlatform(previous) {
     const speed = previous.spring ? -springSpeed : -jumpSpeed;
     const landingTime = (speed + Math.sqrt(speed * speed - 2 * gravity * rise)) / gravity;
     // Leave reaction time and do not require screen wrapping to reach the next center.
-    const maxShift = Math.min(65 + difficulty * 35, landingTime * 240 * 0.55);
-    const x = Math.max(0, Math.min(width - 60, previous.x + (Math.random() * 2 - 1) * maxShift));
+    const moving = score() >= 2000 && !previous.motion && !previous.spring &&
+        !spring && !springGap && Math.random() < 0.3;
+    const amplitude = moving ? 18 : 0;
+    const sourceX = previous.motion ? previous.motion.baseX : previous.x;
+    // Reserve the full motion range at both ends, so every phase still has a reachable jump.
+    const maxShift = Math.max(0, Math.min(65 + difficulty * 35, landingTime * 240 * 0.55) -
+        amplitude - (previous.motion?.amplitude || 0));
+    const x = Math.max(amplitude, Math.min(width - 60 - amplitude, sourceX + (Math.random() * 2 - 1) * maxShift));
     if (springGap) {
         previous.requiredSpring = true;
         previous.fragile = false;
     }
-    const fragile = !spring && !springGap && !previous.spring && !previous.fragile &&
+    const fragile = !moving && !spring && !springGap && !previous.spring && !previous.fragile &&
         Math.random() < 0.12 + difficulty * 0.18;
     const platform = makePlatform(previous.y - gap, x, spring, fragile);
+    if (moving) {
+        platform.motion = { baseX: x, amplitude, phase: Math.random() * Math.PI * 2 };
+        platform.x = x + Math.sin(platform.motion.phase) * amplitude;
+    }
+    if (Math.random() < 0.26) platform.item = { kind: Math.random() < 0.25 ? "diamond" : "pinecone",
+        x: platform.x + 30, y: platform.y - 42, radius: 10, collected: false };
     // Keep a corridor around the complete reachable jump, including the player's body.
     if (routeScore >= 180 && Math.random() < 0.18 + difficulty * 0.22) {
-        const left = Math.min(previous.x, x) - 14;
-        const right = Math.max(previous.x, x) + 74;
+        const left = Math.min(sourceX - (previous.motion?.amplitude || 0), x - amplitude) - 14;
+        const right = Math.max(sourceX + (previous.motion?.amplitude || 0), x + amplitude) + 74;
         const sides = [];
         if (left >= 48) sides.push(24);
         if (right <= width - 48) sides.push(width - 24);
         if (sides.length) platform.hazard = { x: sides[Math.floor(Math.random() * sides.length)],
-            y: (previous.y + platform.y) / 2 - 23, radius: 15 };
+            y: (previous.y + platform.y) / 2 - 23, radius: 15,
+            kind: Math.random() < 0.6 ? "bomb" : "thorn" };
     }
     return platform;
 }
 
 function restart() {
+    if (uploadConfirm.open) uploadConfirm.close();
+    completedRun = undefined;
+    uploaded = false;
     if (result.open) result.close();
     for (const id of ["left", "right"]) document.getElementById(id).classList.remove("pressed");
     player = { x: 157, y: 458, width: 46, height: 46, vy: jumpSpeed, facing: 1, jumpTime: 0 };
+    bonusScore = 0;
+    highest = player.y;
     platforms = [makePlatform(526, 150, false)];
     for (let i = 1; i < 10; i++) {
         platforms.push(nextPlatform(platforms[platforms.length - 1]));
     }
     fragments = [];
+    pickupEffects = [];
     camera = 0;
-    highest = player.y;
     gameOver = false;
     keys.clear();
     pointers.clear();
@@ -178,8 +262,28 @@ function restart() {
     lastTime = undefined;
 }
 
+function touchesCircle(circle) {
+    const nearestX = Math.max(player.x + 6, Math.min(circle.x, player.x + player.width - 6));
+    const nearestY = Math.max(player.y + 6, Math.min(circle.y, player.y + player.height - 6));
+    return (nearestX - circle.x) ** 2 + (nearestY - circle.y) ** 2 < circle.radius ** 2;
+}
+
+function movingSpeed() {
+    return 12 + Math.min(1, Math.max(0, (score() - 2000) / 2000)) * 24;
+}
+
 function step(dt) {
     if (gameOver || result.open || profile.open || document.hidden) return;
+    pickupEffects = pickupEffects.filter(effect => effect.life > 0);
+    for (const effect of pickupEffects) { effect.life -= dt; effect.y -= 24 * dt; }
+    for (const platform of platforms) {
+        if (platform.motion && score() >= 2000) {
+            const motion = platform.motion;
+            motion.phase += movingSpeed() / motion.amplitude * dt;
+            platform.x = motion.baseX + Math.sin(motion.phase) * motion.amplitude;
+            if (platform.item) platform.item.x = platform.x + 30;
+        }
+    }
     fragments = fragments.filter(piece => piece.life > 0);
     for (const piece of fragments) {
         piece.life -= dt;
@@ -229,12 +333,16 @@ function step(dt) {
 
     for (const platform of platforms) {
         const hazard = platform.hazard;
-        if (!hazard) continue;
-        const nearestX = Math.max(player.x + 6, Math.min(hazard.x, player.x + player.width - 6));
-        const nearestY = Math.max(player.y + 6, Math.min(hazard.y, player.y + player.height - 6));
-        if ((nearestX - hazard.x) ** 2 + (nearestY - hazard.y) ** 2 < hazard.radius ** 2) {
+        if (hazard && touchesCircle(hazard)) {
             finish();
             return;
+        }
+        const item = platform.item;
+        if (item && !item.collected && touchesCircle(item)) {
+            item.collected = true;
+            const points = item.kind === "diamond" ? 30 : 10;
+            bonusScore += points;
+            pickupEffects.push({ x: item.x, y: item.y, points, life: 0.7 });
         }
     }
     highest = Math.min(highest, player.y);
@@ -272,10 +380,19 @@ function drawCharacter() {
 
 function draw() {
     context.clearRect(0, 0, width, height);
+    if (backgroundImage.complete && backgroundImage.naturalWidth) {
+        // Slow parallax over a quiet background; reflect at the edges without a repeat seam.
+        const travel = Math.max(0, -camera) * 0.008 % (height * 0.4);
+        const offset = travel <= height * 0.2 ? travel : height * 0.4 - travel;
+        context.drawImage(backgroundImage, 0, -offset, width, height * 1.2);
+    }
     for (const platform of platforms) {
         if (platform.hazard) {
             const hazard = platform.hazard;
             const y = hazard.y - camera;
+            if (hazard.kind === "bomb") {
+                context.drawImage(bombImage, hazard.x - 19, y - 19, 38, 38);
+            } else {
             context.fillStyle = "#813f35";
             context.strokeStyle = "#ffdf9a";
             context.lineWidth = 2;
@@ -290,6 +407,12 @@ function draw() {
             context.closePath();
             context.fill();
             context.stroke();
+            }
+        }
+        if (platform.item && !platform.item.collected) {
+            const item = platform.item;
+            context.drawImage(item.kind === "diamond" ? diamondImage : pineconeImage,
+                item.x - 14, item.y - camera - 14, 28, 28);
         }
         if (platform.broken) continue;
         const y = platform.y - camera;
@@ -297,18 +420,17 @@ function draw() {
         if (image.complete && image.naturalWidth) {
             context.drawImage(image, platform.x, y, platform.width, platform.height);
         }
+        if (platform.motion) {
+            context.strokeStyle = "#80d4d0";
+            context.lineWidth = 2;
+            context.beginPath();
+            context.moveTo(platform.x + 12, y + 13);
+            context.lineTo(platform.x + 48, y + 13);
+            context.stroke();
+        }
         if (platform.spring && springImage.complete && springImage.naturalWidth) {
             const springHeight = performance.now() < platform.compressedUntil ? 12 : 20;
             context.drawImage(springImage, platform.x + 19, y + 3 - springHeight, 22, springHeight);
-        }
-        if (platform.requiredSpring) {
-            context.fillStyle = "#343e24";
-            context.fillRect(platform.x - 4, y + 20, 68, 19);
-            context.fillStyle = "#ffe18a";
-            context.font = "bold 11px sans-serif";
-            context.textAlign = "center";
-            context.fillText("必踩弹簧 ↑", platform.x + 30, y + 33);
-            context.textAlign = "left";
         }
     }
     if (brokenImage.complete && brokenImage.naturalWidth) {
@@ -320,6 +442,13 @@ function draw() {
         context.globalAlpha = 1;
     }
     drawCharacter();
+    for (const effect of pickupEffects) {
+        context.globalAlpha = Math.max(0, effect.life / 0.7);
+        context.fillStyle = "#244834";
+        context.font = "bold 15px sans-serif";
+        context.fillText("+" + effect.points, effect.x - 10, effect.y - camera);
+    }
+    context.globalAlpha = 1;
     currentScore.textContent = score();
     bestScore.textContent = Math.max(score(), records[0]?.score || 0);
 }
@@ -412,6 +541,10 @@ profile.addEventListener("close", clearControls);
 document.getElementById("ranking").addEventListener("click", () => showResult(false));
 document.getElementById("local-ranking").addEventListener("click", showLocalRanking);
 document.getElementById("online-ranking").addEventListener("click", showOnlineRanking);
+document.getElementById("submit-score").addEventListener("click", showUploadConfirm);
+document.getElementById("confirm-upload").addEventListener("click", uploadScore);
+document.getElementById("cancel-upload").addEventListener("click", () => uploadConfirm.close());
+uploadConfirm.addEventListener("cancel", event => { if (uploading) event.preventDefault(); });
 document.getElementById("play-again").addEventListener("click", restart);
 document.getElementById("close-result").addEventListener("click", () => result.close());
 result.addEventListener("close", clearControls);
