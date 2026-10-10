@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.1.0";
+const gameVersion = "1.1.1";
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -204,7 +204,7 @@ function finish() {
 }
 
 function makePlatform(y, x, spring = false, fragile = false) {
-    return { x, y, width: 60, height: 18, spring, fragile, broken: false, compressedUntil: 0, requiredSpring: false };
+    return { x, y, width: 60, height: 18, spring, fragile: fragile || score() >= 5000, broken: false, compressedUntil: 0, requiredSpring: false };
 }
 
 function nextPlatform(previous) {
@@ -230,7 +230,7 @@ function nextPlatform(previous) {
     const x = Math.max(amplitude, Math.min(width - 60 - amplitude, sourceX + (Math.random() * 2 - 1) * maxShift));
     if (springGap) {
         previous.requiredSpring = true;
-        previous.fragile = false;
+        previous.fragile = score() >= 5000;
     }
     const fragile = !moving && !spring && !springGap && !previous.spring && !previous.fragile &&
         Math.random() < 0.12 + difficulty * 0.18;
@@ -404,7 +404,7 @@ function absorbHit(falling = false) {
             if (!target || platform.y > target.y) target = platform;
         }
         target.broken = false;
-        target.fragile = false;
+        target.fragile = score() >= 5000;
         const y = target.y + 50;
         const x = target.x;
         platforms.unshift(makePlatform(y, x));
@@ -427,6 +427,7 @@ function step(dt) {
     pickupEffects = pickupEffects.filter(effect => effect.life > 0);
     for (const effect of pickupEffects) { effect.life -= dt; effect.y -= 24 * dt; }
     for (const platform of platforms) {
+        if (score() >= 5000) platform.fragile = true;
         if (platform.motion && score() >= 2000) {
             const motion = platform.motion;
             motion.phase += movingSpeed() / motion.amplitude * dt;
@@ -537,6 +538,7 @@ function step(dt) {
         }
     }
     highest = Math.min(highest, player.y);
+    if (score() >= 5000) for (const platform of platforms) platform.fragile = true;
     // World coordinates stay fixed; only the camera follows new heights.
     camera = Math.min(camera, player.y - height * 0.4);
     platforms = platforms.filter(platform => platform.y - camera < height + 30);

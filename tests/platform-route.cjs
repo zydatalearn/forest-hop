@@ -35,10 +35,14 @@ const checked = vm.runInContext(`
     if (${!process.argv.includes("--expanded")}) for (const kind of Object.keys(FEATURES)) FEATURES[kind] = false;
     let checked = 0, mandatory = 0, hazards = 0, moving = 0, bombs = 0;
     for (let route = 0; route < 100; route++) {
-        let source = makePlatform(526, 150);
         bonusScore = 0;
+        highest = 458;
+        let source = makePlatform(526, 150);
         for (let index = 0; index < 600; index++) {
+            const allFragile = score() >= 5000;
             const target = nextPlatform(source);
+            if (allFragile && (!target.fragile || target.extras.some(board => !board.fragile)))
+                throw new Error("Solid platform after 5000 points");
             if (target.extras.length > 1) throw new Error("Too many extra boards");
             if (target.item && (target.item.x !== target.x + 30 ||
                 target.item.y !== target.y - (target.spring ? 38 : 18)))
@@ -61,7 +65,7 @@ const checked = vm.runInContext(`
             }
             if (target.motion) {
                 moving++;
-                if (target.spring || target.fragile || source.spring || source.motion) throw new Error("Unsafe moving section");
+                if (target.spring || (!allFragile && target.fragile) || source.spring || source.motion) throw new Error("Unsafe moving section");
                 // Cover both motion extremes and random phases instead of only the generator's phase.
                 target.motion.phase = route % 3 === 0 ? Math.PI / 2 : route % 3 === 1 ? -Math.PI / 2 : Math.random() * Math.PI * 2;
                 target.x = target.motion.baseX + Math.sin(target.motion.phase) * target.motion.amplitude;
@@ -69,10 +73,10 @@ const checked = vm.runInContext(`
             const gap = source.y - target.y;
             if (source.requiredSpring) {
                 mandatory++;
-                if (!source.spring || source.fragile || target.spring || target.fragile || gap <= 100)
+                if (!source.spring || (!allFragile && (source.fragile || target.fragile)) || target.spring || gap <= 100)
                     throw new Error("Unsafe mandatory spring section");
             }
-            if (source.fragile && target.fragile) throw new Error("Consecutive fragile platforms");
+            if (!allFragile && source.fragile && target.fragile) throw new Error("Consecutive fragile platforms");
             // Run the actual collision/physics code at 120Hz, aiming for the next center.
             const sourceBottom = source.y - (source.spring ? 20 : 0);
             player = { x: source.x + 7, y: sourceBottom - 46, width: 46, height: 46,

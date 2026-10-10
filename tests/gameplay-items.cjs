@@ -181,6 +181,23 @@ vm.runInContext(`
         const target = nextPlatform(source);
         check(!target.item || ["pinecone", "diamond"].includes(target.item.kind), "Early functional pickup");
     }
+    setup(); bonusScore = 4974; // Height contributes 25 points: total 4999.
+    const solidBoard = platforms[0];
+    step(1 / 120);
+    check(!solidBoard.fragile, "All-fragile threshold must not start before 5000");
+    collectItem({kind:"pinecone", x:163, y:223});
+    step(1 / 120);
+    check(platforms.every(board => board.fragile), "Existing boards must become fragile at 5000");
+    for (const spring of [false, true]) {
+        const highBoard = makePlatform(400,140,spring);
+        platforms = [highBoard, makePlatform(-10000,140)];
+        player.x=147; player.y=(spring ? 380 : 400)-46-1; player.vy=300;
+        step(1/120);
+        check(highBoard.broken && player.vy === (spring ? springSpeed : jumpSpeed), "High-score board must bounce then break, including springs");
+        const next = nextPlatform(highBoard);
+        check(highBoard.fragile && next.fragile && next.extras.every(board=>board.fragile), "Generation must preserve all-fragile rule");
+    }
+    restart(); check(score()===0 && !platforms[0].fragile, "Restart must reset 5000-point mode");
     hardMode = true;
     let source = makePlatform(-5000, 150), moss = 0, hives = 0, wind = 0;
     for (let i = 0; i < 2000; i++) {
