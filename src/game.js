@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.2.0";
+const gameVersion = "1.3.0";
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -34,11 +34,11 @@ const assets = [
 
 const gravity = 1440, jumpSpeed = -480, springSpeed = -900;
 const FEATURES = { dash: true, shield: true, glide: true, magnet: true, feather: true, "spring-boots": true, chains: true,
-    pressure: true, waves: true, satiety: true };
+    pressure: true, waves: true, satiety: true, blinking: true };
 const itemNames = { dash: "冲刺", shield: "护心果", glide: "滑翔", magnet: "磁石", feather: "二段跳", "spring-boots": "弹簧靴" };
 const effectTimers = ["dashRemaining", "dashCooldown", "invulnerable", "glideRemaining", "magnetRemaining", "slowRemaining"];
 let hardMode = false, gameTime = 0, combo = 0, collectionChain = null;
-let bombWave = null, nextWaveAt = null, satiety = null, deathReason = "";
+let bombWaves = [], bombWave = null, nextWaveAt = null, satiety = null, deathReason = "";
 const skillStatus = document.getElementById("skill-status");
 const keys = new Set();
 const pointers = new Map();
@@ -228,6 +228,19 @@ function placeFood(platform) {
         x: platform.x + 30, y: platform.y - (platform.spring ? 38 : 18), radius: 10, collected: false };
 }
 
+function platformPhase(platform) {
+    return platform.blinkPhase === undefined ? 0 : (gameTime + platform.blinkPhase) % 4;
+}
+
+function platformOpacity(platform) {
+    if (platform.broken) return 0;
+    if (platform.blinkPhase === undefined) return 1;
+    const phase = platformPhase(platform);
+    if (phase < 2.4) return 1;
+    if (phase < 3) return 1 - (phase - 2.4) / 0.6 * 0.85;
+    return phase < 3.7 ? 0 : (phase - 3.7) / 0.3 * 0.15;
+}
+
 function ordinaryBombChance() {
     if (!FEATURES.pressure) return 0.6;
     if (FEATURES.waves && altitude() >= 2000) return bombWave ? 0 : 0.18;
@@ -307,6 +320,9 @@ function nextPlatform(previous) {
             else if (Math.random() < 0.2 && (center < left || center > right) && outsideExit)
                 extra.hazard = { x: center, y: extra.y - 19, radius: 15, kind: "hive", triggered: false };
         }
+        if (FEATURES.blinking && altitude() >= 3000 && !extra.hazard && !extra.mossy && Math.random() < 0.25) {
+            extra.blinkPhase = platform.routeIndex % 3 * (4 / 3);
+        }
         platform.extras.push(extra);
         for (let j = candidates.length - 1; j >= 0; j--) {
             if (Math.abs(candidates[j] - extraX) < 90) candidates.splice(j, 1);
@@ -344,6 +360,7 @@ function restart() {
     gameTime = 0;
     combo = 0;
     collectionChain = null;
+    bombWaves = [];
     bombWave = null;
     nextWaveAt = null;
     satiety = null;
@@ -478,28 +495,23 @@ function updatePressure(dt) {
     }
     if (!FEATURES.waves || altitude() < 2000) return;
     if (nextWaveAt === null) nextWaveAt = gameTime + 5;
-    if (bombWave && (gameTime >= bombWave.expiresAt || player.y + player.height < bombWave.y - 14 ||
-        bombWave.y - camera > height + 30)) bombWave = null;
+    bombWaves = bombWaves.filter(wave => wave.y - camera <= height + 30);
+    bombWave = bombWaves[bombWaves.length - 1] || null;
     if (gameTime < nextWaveAt) return;
     nextWaveAt = gameTime + 5;
     const target = platforms[platforms.length - 1];
     const center = (target.motion?.baseX ?? target.x) + 30;
-    // Springs can carry the player past several boards before the next landing.
-    // Reserve every main-route center crossed below this row, including board motion.
     const y = target.y - (target.spring ? 20 : 0) + 24;
-    const route = platforms.filter(p => p.extras && p.y >= y - 24 && p.y <= player.y + player.height + 300);
-    const centers = route.map(p => ({ x: (p.motion?.baseX ?? p.x) + 30, range: p.motion?.amplitude || 0 }));
-    centers.push({ x: center, range: target.motion?.amplitude || 0 }, { x: player.x + player.width / 2, range: 0 });
-    const left = Math.min(...centers.map(p => p.x - p.range)) - 36;
-    const right = Math.max(...centers.map(p => p.x + p.range)) + 36;
-    const gapWidth = Math.min(width, Math.max(100, right - left));
-    const gapLeft = Math.max(0, Math.min(width - gapWidth, left));
+    // Four missing 24px bomb slots leave about two 46px player widths.
+    const gapWidth = 96;
+    const gapLeft = Math.max(0, Math.min(width - gapWidth, Math.round((center - gapWidth / 2) / 24) * 24));
     const bombs = [];
-    for (let x = 0; x <= width; x += 24) {
-        if (x + 12 > gapLeft && x - 12 < gapLeft + gapWidth) continue;
+    for (let x = 12; x < width; x += 24) {
+        if (x > gapLeft && x < gapLeft + gapWidth) continue;
         bombs.push({ x, y, radius: 12, destroyed: false });
     }
-    bombWave = { y, gapLeft, gapWidth, bombs, warningUntil: gameTime + 1.2, expiresAt: gameTime + 5 };
+    bombWave = { y, gapLeft, gapWidth, bombs, warningUntil: gameTime + 1.2 };
+    bombWaves.push(bombWave);
     // One wave replaces ordinary dangers, rather than adding another layer of density.
     for (const platform of platforms) delete platform.hazard;
 }
@@ -555,7 +567,7 @@ function step(dt) {
     player.y += player.vy * dt;
     if (player.vy >= 0) {
         for (const platform of platforms) {
-            if (platform.broken) continue;
+            if (platform.broken || platformPhase(platform) >= 3) continue;
             const overlaps = player.x + player.width > platform.x &&
                 player.x < platform.x + platform.width;
             const hitsSpring = platform.spring && player.x + player.width > platform.x + 17 &&
@@ -624,8 +636,9 @@ function step(dt) {
             collectItem(item);
         }
     }
-    if (bombWave && gameTime >= bombWave.warningUntil) {
-        for (const bomb of bombWave.bombs) {
+    for (const wave of bombWaves) {
+        if (gameTime < wave.warningUntil) continue;
+        for (const bomb of wave.bombs) {
             if (bomb.destroyed || !touchesCircle(bomb)) continue;
             if (dashing && player.dashBombs < 1) {
                 bomb.destroyed = true;
@@ -680,7 +693,9 @@ function draw() {
         context.drawImage(backgroundImage, 0, -offset, width, height * 1.2);
     }
     for (const platform of platforms) {
-        if (platform.broken) continue;
+        const opacity = platformOpacity(platform);
+        if (opacity === 0) continue;
+        context.globalAlpha = opacity;
         const y = platform.y - camera;
         const image = platform.fragile ? brokenImage : platformImage;
         if (image.complete && image.naturalWidth) {
@@ -708,6 +723,7 @@ function draw() {
             context.drawImage(springImage, platform.x + 19, y + 3 - springHeight, 22, springHeight);
         }
     }
+    context.globalAlpha = 1;
     if (brokenImage.complete && brokenImage.naturalWidth) {
         for (const piece of fragments) {
             context.globalAlpha = Math.max(0, piece.life / 0.4);
@@ -738,9 +754,9 @@ function draw() {
                 item.x - 14, item.y - camera - 14, 28, 28);
         }
     }
-    if (bombWave) {
-        const y = bombWave.y - camera;
-        for (const bomb of bombWave.bombs) {
+    for (const wave of bombWaves) {
+        const y = wave.y - camera;
+        for (const bomb of wave.bombs) {
             if (!bomb.destroyed) context.drawImage(bombImage, bomb.x - 12, y - 12, 24, 24);
         }
     }

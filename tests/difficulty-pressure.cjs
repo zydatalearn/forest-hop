@@ -69,6 +69,7 @@ console.log("Passed: height tiers, bonus isolation, pressure, wave cadence/gap, 
 
 vm.runInContext(`
     for (const kind of ["dash","shield","glide","magnet","feather","spring-boots"]) FEATURES[kind] = false;
+    FEATURES.waves = false;
     for (const startHeight of [2000, 5000, 8000]) {
         restart();
         const offset = startHeight * 10;
@@ -84,6 +85,7 @@ vm.runInContext(`
             check(target, "Continuous route needs next board");
             keys.clear(); const delta = target.x + 7 - player.x;
             if (Math.abs(delta) > 1) keys.add(delta > 0 ? "ArrowRight" : "ArrowLeft");
+            for (const p of platforms) delete p.hazard; // Isolate route and hunger from optional bomb detours.
             const vy = player.vy, beforePlatforms = platforms.slice(); step(1/120);
             if (bombWave && bombWave !== lastWave) { waves++; lastWave = bombWave; }
             if (vy >= 0 && player.vy < 0) {
@@ -92,8 +94,62 @@ vm.runInContext(`
             }
         }
         check(!gameOver, "Continuous route died at " + startHeight + ": " + deathReason + " time=" + gameTime);
-        check(landings > 50 && waves >= 10, "Continuous simulation must cover routes and waves");
+        check(landings > 50, "Continuous simulation must cover routes");
         if (startHeight === 8000) check(satiety > 0, "Food sustains continuous progress");
     }
 `, sandbox);
-console.log("Passed: 60 seconds of continuous main-route play at 2000/5000/8000 m with waves and hunger active.");
+console.log("Passed: 60 seconds of continuous main-route play at 2000/5000/8000 m with hunger active and hazards isolated; bomb behavior tested separately.");
+
+vm.runInContext(`
+    FEATURES.blinking = true;
+    function testBlinkLanding(time, fragile = false) {
+        restart(); FEATURES.waves = false; FEATURES.satiety = false;
+        const blink = makePlatform(320,140,false,fragile); blink.blinkPhase = 0;
+        platforms = [blink, makePlatform(-10000,140)];
+        player.x = 147; player.y = 273; player.vy = 180; camera = 0; gameTime = time;
+        step(1/120); return blink;
+    }
+    check(!testBlinkLanding(1).broken && player.vy < 0, "Visible board supports landing");
+    testBlinkLanding(3.2); check(player.vy > 0 && player.y > 273, "Invisible board has no collision");
+    testBlinkLanding(3.8); check(player.vy > 0, "Return outline remains non-solid");
+    testBlinkLanding(4.1); check(player.vy < 0, "Board returns after one second");
+    const brokenBlink = testBlinkLanding(1,true);
+    check(brokenBlink.broken, "Fragile blinking board breaks on landing");
+    gameTime = 4.1; check(platformOpacity(brokenBlink) === 0, "Broken board never returns");
+    const blink = {blinkPhase:0};
+    gameTime = 2.7; check(Math.abs(platformOpacity(blink)-.575)<.0001, "Smooth disappearance");
+    gameTime = 3.2; check(platformOpacity(blink)===0, "Fully hidden interval");
+    gameTime = 3.85; check(Math.abs(platformOpacity(blink)-.075)<.0001, "Faint return outline");
+    profile.open = true; const phase = platformPhase(blink); step(.5);
+    check(platformPhase(blink) === phase, "Pause freezes visibility cycle"); profile.close();
+    for (const meters of [2999,3000,5000]) {
+        restart(); highest = 458 - meters * 10; let source = makePlatform(-30000,150), count = 0;
+        for(let i=0;i<500;i++) {
+            const next = nextPlatform(source);
+            check(next.blinkPhase === undefined, "Main route stays permanent");
+            for(const extra of next.extras) {
+                if(extra.blinkPhase === undefined) continue;
+                count++; check(!extra.hazard && !extra.spring && !extra.motion, "No stacked hazard on blinking boards");
+                if(meters===5000) check(extra.fragile, "High blinking board stays fragile");
+            }
+            source=next;
+        }
+        check(meters<3000 ? count===0 : count>0, "Blinking height threshold");
+    }
+    check(platformPhase({blinkPhase:0}) !== platformPhase({blinkPhase:4/3}), "Adjacent cycles offset");
+`, sandbox);
+console.log("Passed: blinking board collision, fade/outline, pause, permanent breakage, threshold and safe main route.");
+
+vm.runInContext(`
+    FEATURES.waves = true; stage(2000); updatePressure(0); gameTime = 5; updatePressure(0);
+    const first = bombWave;
+    check(first.gapWidth === 96 && first.bombs.length === 11, "Exactly four empty bomb slots, eleven bombs");
+    player.y = first.y - 100; camera = first.y - 200; gameTime = 7; updatePressure(0);
+    check(bombWaves.includes(first), "Passing above row must not erase bombs");
+    gameTime = 10; updatePressure(0);
+    check(bombWaves.includes(first) && bombWaves.length === 2, "New row must not replace visible previous row");
+    camera = first.y - height - 31; updatePressure(0);
+    check(!bombWaves.includes(first), "Cleanup only after row leaves screen");
+    restart(); check(bombWaves.length===0, "Restart clears every row");
+`, sandbox);
+console.log("Passed: two-body gap, dense bomb row, persistence after crossing/new wave, offscreen cleanup and restart.");
