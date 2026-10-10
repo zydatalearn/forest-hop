@@ -29,6 +29,9 @@ const server = createServer(env, async (url, options) => {
     let response = await fetch(url+'/scores',{method:'OPTIONS',headers});
     assert.equal(response.status,204);
     assert.equal(response.headers.get('access-control-allow-origin'),env.ALLOWED_ORIGIN);
+    response = await fetch(url+'/scores',{method:'OPTIONS',headers:{Origin:'null','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'}});
+    assert.equal(response.status,204);
+    assert.equal(response.headers.get('access-control-allow-origin'),'null');
     response = await post({name:'小树',score:310});
     assert.equal(response.status,200);assert(!(await response.text()).includes(env.CLOUDBASE_APIKEY));
     response = await post({name:'小树',score:80});
@@ -38,7 +41,11 @@ const server = createServer(env, async (url, options) => {
     for(const body of [{name:'',score:1},{name:'小树',score:-1},{name:'小树',score:1.5},{name:'小树',score:2147483648}])assert.equal((await post(body)).status,400);
     assert.equal((await fetch(url+'/scores',{headers:{Origin:'https://other.example'}})).status,403);
     assert.equal(calls,3);
-    for(let i=0;i<3;i++)assert.equal((await post({name:'小树',score:310})).status,200);
+    response = await fetch(url+'/scores',{method:'POST',headers:{Origin:'null','Content-Type':'application/json'},body:JSON.stringify({name:'本机玩家',score:330})});
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('access-control-allow-origin'),'null');
+    assert.equal((await response.json()).record.score,330);
+    for(let i=0;i<2;i++)assert.equal((await post({name:'小树',score:310})).status,200);
     assert.equal((await post({name:'小树',score:310})).status,429);
     console.log('Passed: PG API contract, highest score response, CORS, invalid submissions, throttling and secret isolation.');
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>server.close());

@@ -231,7 +231,7 @@ function nextPlatform(previous) {
     for (let extraX = 0; extraX <= width - 60; extraX += 15) {
         if (Math.abs(extraX - x) >= 90 + amplitude) candidates.push(extraX);
     }
-    const count = Math.random() < 0.45 ? 2 : 1;
+    const count = Math.floor(Math.random() * 3);
     for (let i = 0; i < count && candidates.length; i++) {
         const extraX = candidates[Math.floor(Math.random() * candidates.length)];
         const extra = makePlatform(platform.y, extraX);

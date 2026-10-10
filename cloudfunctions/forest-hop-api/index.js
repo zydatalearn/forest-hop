@@ -6,14 +6,15 @@ function createServer(env = process.env, fetchApi = fetch) {
     return http.createServer(async (req, res) => {
         const origin = req.headers.origin;
         const allowed = env.ALLOWED_ORIGIN || "https://zydatalearn.github.io";
+        const originAllowed = origin === allowed || origin === "null";
         const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", Vary: "Origin" };
-        if (origin === allowed) Object.assign(headers, { "Access-Control-Allow-Origin": origin,
+        if (originAllowed) Object.assign(headers, { "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" });
         const send = (status, data) => { res.writeHead(status, headers); res.end(data === undefined ? undefined : JSON.stringify(data)); };
         const url = new URL(req.url, "http://localhost");
         const path = url.pathname;
         if (path === "/health" && req.method === "GET") return send(200, { ok: true });
-        if (origin && origin !== allowed) return send(403, { message: "网站来源不允许" });
+        if (origin && !originAllowed) return send(403, { message: "网站来源不允许" });
         if (path !== "/scores") return send(404, { message: "接口不存在" });
         if (req.method === "OPTIONS") return send(204);
         if (!["GET", "POST"].includes(req.method)) return send(405, { message: "请求方法不支持" });
