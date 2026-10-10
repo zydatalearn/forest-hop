@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.0.3";
+const gameVersion = "1.0.4";
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -24,10 +24,10 @@ const brokenImage = new Image();
 const backgroundImage = new Image();
 const diamondImage = new Image(), pineconeImage = new Image(), bombImage = new Image();
 const assets = [
-    [squirrelImage, "squirrel-jump-sheet.webp"], [platformImage, "platform-wood.webp"],
+    [squirrelImage, "runtime/squirrel-jump-sheet.webp"], [platformImage, "platform-wood.webp"],
     [springImage, "spring.webp"], [brokenImage, "platform-broken-wood.webp"],
-    [backgroundImage, "forest-warm.webp"], [diamondImage, "diamond.webp"],
-    [pineconeImage, "pinecone.webp"], [bombImage, "bomb.webp"]
+    [backgroundImage, "runtime/forest-warm.webp"], [diamondImage, "runtime/diamond.webp"],
+    [pineconeImage, "runtime/pinecone.webp"], [bombImage, "runtime/bomb.webp"]
 ];
 
 const gravity = 1440, jumpSpeed = -480, springSpeed = -900;
@@ -578,7 +578,7 @@ async function loadAssets() {
     status.textContent = "正在进入游戏 · 0%";
     try {
         await Promise.all(assets.map(async ([image, file]) => {
-            image.src = "./assets/images/" + file + "?v=" + gameVersion;
+            image.src = "./assets/images/" + file;
             await image.decode();
             status.textContent = "正在进入游戏 · " + Math.round(++loaded / assets.length * 100) + "%";
         }));
