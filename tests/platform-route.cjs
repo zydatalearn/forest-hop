@@ -37,8 +37,15 @@ const checked = vm.runInContext(`
         bonusScore = 0;
         for (let index = 0; index < 600; index++) {
             const target = nextPlatform(source);
-            if (target.hazard) hazards++;
-            if (target.hazard?.kind === "bomb") bombs++;
+            if (target.hazard) throw new Error("Bomb on main route");
+            for (const extra of target.extras) {
+                if (extra.y !== target.y) throw new Error("Extra board on wrong height");
+                if (extra.hazard) {
+                    hazards++; bombs++;
+                    if (extra.hazard.kind !== "bomb" || extra.hazard.x !== extra.x + 30 || extra.hazard.y !== extra.y - 19)
+                        throw new Error("Hazard must be a bomb on a board");
+                }
+            }
             if (target.motion) {
                 moving++;
                 if (target.spring || target.fragile || source.spring || source.motion) throw new Error("Unsafe moving section");
@@ -57,7 +64,7 @@ const checked = vm.runInContext(`
             const sourceBottom = source.y - (source.spring ? 20 : 0);
             player = { x: source.x + 7, y: sourceBottom - 46, width: 46, height: 46,
                 vy: source.spring ? springSpeed : jumpSpeed, facing: 1, jumpTime: 0 };
-            platforms = [source, target, makePlatform(target.y - 10000, target.x)];
+            platforms = [...(source.extras || []), source, ...target.extras, target, makePlatform(target.y - 10000, target.x)];
             camera = player.y - height * 0.4;
             highest = player.y;
             gameOver = false;

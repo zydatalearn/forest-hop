@@ -225,16 +225,28 @@ function nextPlatform(previous) {
     }
     if (Math.random() < 0.26) platform.item = { kind: Math.random() < 0.25 ? "diamond" : "pinecone",
         x: platform.x + 30, y: platform.y - 42, radius: 10, collected: false };
-    // Keep a corridor around the complete reachable jump, including the player's body.
-    if (routeScore >= 180 && Math.random() < 0.18 + difficulty * 0.22) {
-        const left = Math.min(sourceX - (previous.motion?.amplitude || 0), x - amplitude) - 14;
-        const right = Math.max(sourceX + (previous.motion?.amplitude || 0), x + amplitude) + 74;
-        const sides = [];
-        if (left >= 48) sides.push(24);
-        if (right <= width - 48) sides.push(width - 24);
-        if (sides.length) platform.hazard = { x: sides[Math.floor(Math.random() * sides.length)],
-            y: (previous.y + platform.y) / 2 - 23, radius: 15,
-            kind: Math.random() < 0.6 ? "bomb" : "thorn" };
+    // Extra boards offer choices; the main route remains clear at every motion phase.
+    platform.extras = [];
+    const candidates = [];
+    for (let extraX = 0; extraX <= width - 60; extraX += 15) {
+        if (Math.abs(extraX - x) >= 90 + amplitude) candidates.push(extraX);
+    }
+    const count = Math.random() < 0.45 ? 2 : 1;
+    for (let i = 0; i < count && candidates.length; i++) {
+        const extraX = candidates[Math.floor(Math.random() * candidates.length)];
+        const extra = makePlatform(platform.y, extraX);
+        const center = extraX + 30;
+        const left = Math.min(sourceX - (previous.motion?.amplitude || 0), x - amplitude) - 35;
+        const right = Math.max(sourceX + (previous.motion?.amplitude || 0), x + amplitude) + 95;
+        // Also reserve room for the next outgoing jump from this safe board.
+        const outsideExit = Math.abs(center - (x + 30)) > 145 + amplitude;
+        if (routeScore >= 180 && (center < left || center > right) && outsideExit && Math.random() < 0.6) {
+            extra.hazard = { x: center, y: extra.y - 19, radius: 15, kind: "bomb" };
+        }
+        platform.extras.push(extra);
+        for (let j = candidates.length - 1; j >= 0; j--) {
+            if (Math.abs(candidates[j] - extraX) < 90) candidates.splice(j, 1);
+        }
     }
     return platform;
 }
@@ -250,7 +262,8 @@ function restart() {
     highest = player.y;
     platforms = [makePlatform(526, 150, false)];
     for (let i = 1; i < 10; i++) {
-        platforms.push(nextPlatform(platforms[platforms.length - 1]));
+        const next = nextPlatform(platforms[platforms.length - 1]);
+        platforms.push(...next.extras, next);
     }
     fragments = [];
     pickupEffects = [];
@@ -351,7 +364,8 @@ function step(dt) {
     platforms = platforms.filter(platform => platform.y - camera < height + 30);
     while (platforms[platforms.length - 1].y > camera - 80) {
         const previous = platforms[platforms.length - 1];
-        platforms.push(nextPlatform(previous));
+        const next = nextPlatform(previous);
+        platforms.push(...next.extras, next);
     }
     if (player.y - camera > height) finish();
 }
@@ -390,24 +404,7 @@ function draw() {
         if (platform.hazard) {
             const hazard = platform.hazard;
             const y = hazard.y - camera;
-            if (hazard.kind === "bomb") {
-                context.drawImage(bombImage, hazard.x - 19, y - 19, 38, 38);
-            } else {
-            context.fillStyle = "#813f35";
-            context.strokeStyle = "#ffdf9a";
-            context.lineWidth = 2;
-            context.beginPath();
-            for (let i = 0; i < 16; i++) {
-                const angle = i * Math.PI / 8;
-                const radius = i % 2 ? 10 : 19;
-                const x = hazard.x + Math.cos(angle) * radius;
-                const pointY = y + Math.sin(angle) * radius;
-                if (i) context.lineTo(x, pointY); else context.moveTo(x, pointY);
-            }
-            context.closePath();
-            context.fill();
-            context.stroke();
-            }
+            context.drawImage(bombImage, hazard.x - 19, y - 19, 38, 38);
         }
         if (platform.item && !platform.item.collected) {
             const item = platform.item;
