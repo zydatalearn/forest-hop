@@ -37,6 +37,17 @@ const checked = vm.runInContext(`
         bonusScore = 0;
         for (let index = 0; index < 600; index++) {
             const target = nextPlatform(source);
+            if (target.extras.length > 1) throw new Error("Too many extra boards");
+            if (target.item && (target.item.x !== target.x + 30 ||
+                target.item.y !== target.y - (target.spring ? 38 : 18)))
+                throw new Error("Pickup must sit above its own board");
+            if (source.item) {
+                for (const board of [...target.extras, target]) {
+                    if (source.item.y + 14 > board.y && source.item.y - 14 < board.y + board.height &&
+                        source.item.x + 14 > board.x && source.item.x - 14 < board.x + board.width)
+                        throw new Error("Pickup overlaps upper board");
+                }
+            }
             if (target.hazard) throw new Error("Bomb on main route");
             for (const extra of target.extras) {
                 if (extra.y !== target.y) throw new Error("Extra board on wrong height");

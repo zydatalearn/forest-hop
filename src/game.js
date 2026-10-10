@@ -224,14 +224,14 @@ function nextPlatform(previous) {
         platform.x = x + Math.sin(platform.motion.phase) * amplitude;
     }
     if (Math.random() < 0.26) platform.item = { kind: Math.random() < 0.25 ? "diamond" : "pinecone",
-        x: platform.x + 30, y: platform.y - 42, radius: 10, collected: false };
+        x: platform.x + 30, y: platform.y - (spring ? 38 : 18), radius: 10, collected: false };
     // Extra boards offer choices; the main route remains clear at every motion phase.
     platform.extras = [];
     const candidates = [];
     for (let extraX = 0; extraX <= width - 60; extraX += 15) {
         if (Math.abs(extraX - x) >= 90 + amplitude) candidates.push(extraX);
     }
-    const count = Math.floor(Math.random() * 3);
+    const count = Math.floor(Math.random() * 2);
     for (let i = 0; i < count && candidates.length; i++) {
         const extraX = candidates[Math.floor(Math.random() * candidates.length)];
         const extra = makePlatform(platform.y, extraX);
@@ -246,6 +246,21 @@ function nextPlatform(previous) {
         platform.extras.push(extra);
         for (let j = candidates.length - 1; j >= 0; j--) {
             if (Math.abs(candidates[j] - extraX) < 90) candidates.splice(j, 1);
+        }
+    }
+    if (previous.item) {
+        const item = previous.item;
+        const itemRange = previous.motion?.amplitude || 0;
+        const itemX = (previous.motion?.baseX ?? previous.x) + 30;
+        for (const board of [...platform.extras, platform]) {
+            const boardRange = board.motion?.amplitude || 0;
+            const boardX = board.motion?.baseX ?? board.x;
+            if (item.y + 14 > board.y && item.y - 14 < board.y + board.height &&
+                itemX + itemRange + 14 > boardX - boardRange &&
+                itemX - itemRange - 14 < boardX + boardRange + board.width) {
+                delete previous.item;
+                break;
+            }
         }
     }
     return platform;
