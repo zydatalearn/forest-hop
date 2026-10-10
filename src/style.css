@@ -65,6 +65,8 @@ dialog h2 { font-size: 15px; margin: 20px 0 10px; }
 #ranking-status { font-size: 12px; margin-bottom: 8px; }
 #submit-score { display: block; padding: 12px; margin-top: 14px; border-radius: 12px; background: #3e5433; color: #fff8dc; text-decoration: none; }
 #submit-score[hidden], button[hidden] { display: none; }
+#manual-upload { display: block; margin-top: 14px; color: #425529; font-size: 14px; line-height: 1.6; }
+#manual-upload[hidden] { display: none; }
 .modal-actions { display: flex; gap: 10px; margin: 20px 0 12px; }
 .modal-actions button { flex: 1; min-height: 48px; border-radius: 14px; font-size: 16px; background: #98632f; }
 #close-result { background: #8b8354; }

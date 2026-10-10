@@ -40,6 +40,7 @@ const run = source => vm.runInContext(source, context);
 (async () => {
     run("highest = 358; finish()");
     assert(element("upload-confirm").open);
+    assert(element("manual-upload").hidden);
     const upload = run("uploadScore()");
     await run("uploadScore()");
     assert.equal(posts.length, 1);
@@ -65,6 +66,10 @@ const run = source => vm.runInContext(source, context);
     assert(!element("upload-yes").disabled);
     assert(!run("completedRun.uploaded"));
     assert(element("upload-status").textContent.includes("凭据"));
+    assert(!element("manual-upload").hidden);
+    const manualBody = new URL(element("manual-upload").href).searchParams.get("body");
+    assert(manualBody.includes('"name": "小树"'));
+    assert(manualBody.includes('"score": 0'));
     fail = false;
     const retry = run("uploadScore()");
     finishRequest();

@@ -157,6 +157,12 @@ function showUploadConfirm() {
     if (!completedRun || completedRun.uploaded || uploading) return;
     document.getElementById("upload-summary").textContent = completedRun.name + " · " + completedRun.score + " 分";
     document.getElementById("upload-status").textContent = "";
+    const manual = document.getElementById("manual-upload");
+    manual.hidden = true;
+    const body = "Forest Hop 手动提交成绩（未经验证）\n\n```json\n" +
+        JSON.stringify({ game: "forest-hop", name: completedRun.name, score: completedRun.score }, null, 2) + "\n```";
+    manual.href = "https://github.com/zydatalearn/forest-hop/issues/new?title=" +
+        encodeURIComponent("[Forest Hop Score]") + "&body=" + encodeURIComponent(body);
     uploadConfirm.showModal();
 }
 
@@ -188,8 +194,10 @@ async function uploadScore() {
         uploadConfirm.close();
         await showOnlineRanking();
     } catch (error) {
+        document.getElementById("manual-upload").hidden = false;
         document.getElementById("upload-status").textContent = request.signal.aborted ?
-            "请求超时，可能已上传，请先查看联机排行再决定是否重试" : error.message;
+            "请求超时，可能已上传，请先查看联机排行再决定是否重试；也可使用下方备用入口" :
+            error instanceof TypeError ? "无法连接上传服务，本机成绩已保存。可切换网络重试，或使用下方 GitHub 备用入口" : error.message;
     } finally {
         clearTimeout(timeout);
         uploading = false;
