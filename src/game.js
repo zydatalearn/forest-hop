@@ -1,4 +1,6 @@
 // Physics use seconds so movement is consistent across refresh rates.
+const gameVersion = "1.0.3";
+document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
 const width = 360, height = 576;
@@ -576,7 +578,7 @@ async function loadAssets() {
     status.textContent = "正在进入游戏 · 0%";
     try {
         await Promise.all(assets.map(async ([image, file]) => {
-            image.src = "./assets/images/" + file;
+            image.src = "./assets/images/" + file + "?v=" + gameVersion;
             await image.decode();
             status.textContent = "正在进入游戏 · " + Math.round(++loaded / assets.length * 100) + "%";
         }));
