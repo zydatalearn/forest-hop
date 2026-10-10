@@ -10,14 +10,14 @@
 <body>
     <div id="loading" role="status" aria-live="polite">
         <h1>森林跃跃</h1>
-        <p id="loading-status">正在加载图片</p>
+        <p id="loading-status">正在进入游戏 · 0%</p>
         <button id="retry-loading" hidden>重新加载</button>
     </div>
     <main id="playfield">
         <header class="hud">
             <button id="profile-button" aria-label="打开个人主页"><span id="player-name">森林旅人</span><small>主页</small></button>
             <button id="ranking" class="ranking-button">排行</button>
-            <div class="score-panel"><span>本次得分 <strong id="current-score">0</strong></span><small>最高分 <b id="best-score">0</b></small></div>
+            <div class="score-panel"><span>得分 <strong id="current-score">0</strong></span><small>最高分 <b id="best-score">0</b></small></div>
         </header>
         <canvas id="board" aria-label="森林跃跃游戏"></canvas>
         <div class="controls">
@@ -38,11 +38,10 @@
             <small>昵称与成绩保存在当前浏览器</small>
         </dialog>
         <dialog id="result">
-            <div class="modal-header">FOREST HOP</div>
             <h1 id="result-title">游戏结束</h1>
             <div id="result-summary" aria-live="polite"></div>
-            <div class="ranking-tabs"><button id="local-ranking">本机排行</button><button id="online-ranking">联机排行</button></div>
-            <h2 id="ranking-title">本机排行榜 · 前 3 名</h2>
+            <div class="ranking-tabs"><button id="local-ranking">本机</button><button id="online-ranking">联机</button></div>
+            <h2 id="ranking-title">本机 · 前 3</h2>
             <div id="ranking-status" role="status"></div>
             <div id="ranking-self"></div>
             <ol id="rank-list"></ol>
@@ -51,7 +50,6 @@
                 <button id="close-result">返回</button>
                 <button id="play-again">再玩一次</button>
             </div>
-            <small>成绩自动保存在当前浏览器 · 联机排行按名称保留最高分</small>
         </dialog>
         <dialog id="upload-confirm">
             <h1>是否上传记录？</h1>

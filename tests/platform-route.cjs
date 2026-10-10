@@ -8,7 +8,7 @@ const document = {
     hidden: false,
     getElementById(id) {
         if (!elements.has(id)) elements.set(id, {
-            open: false, classList: { remove() {}, toggle() {} }, addEventListener() {},
+            open: false, classList: { remove() {}, toggle() {} }, addEventListener() {}, setAttribute() {},
             getContext() { return {}; }, showModal() { this.open = true; }, close() { this.open = false; },
             replaceChildren() {}, append() {}
         });

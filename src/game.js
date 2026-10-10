@@ -96,8 +96,10 @@ function renderRanking(values) {
 }
 
 function showLocalRanking() {
+    document.getElementById("local-ranking").setAttribute("aria-pressed", "true");
+    document.getElementById("online-ranking").setAttribute("aria-pressed", "false");
     rankingRequest++;
-    document.getElementById("ranking-title").textContent = "本机排行榜 · 前 3 名";
+    document.getElementById("ranking-title").textContent = "本机 · 前 3";
     document.getElementById("ranking-status").textContent = "";
     document.getElementById("ranking-self").textContent = "";
     renderRanking(records);
@@ -112,8 +114,10 @@ async function requestScores(options = {}) {
 }
 
 async function showOnlineRanking() {
+    document.getElementById("local-ranking").setAttribute("aria-pressed", "false");
+    document.getElementById("online-ranking").setAttribute("aria-pressed", "true");
     const request = ++rankingRequest;
-    document.getElementById("ranking-title").textContent = "联机排行榜 · 同名最高分";
+    document.getElementById("ranking-title").textContent = "联机 · 前 10";
     document.getElementById("rank-list").replaceChildren();
     document.getElementById("ranking-self").textContent = "";
     const status = document.getElementById("ranking-status");
@@ -122,9 +126,9 @@ async function showOnlineRanking() {
         const data = await requestScores();
         if (request !== rankingRequest) return;
         renderRanking(data.records);
-        status.textContent = "同名玩家取最高分 · 前 10 名";
+        status.textContent = "";
         document.getElementById("ranking-self").textContent = data.self ?
-            "我的名次：第 " + data.self.rank + " 名 · 最高分 " + data.self.score : "我的名次：尚未上传成绩";
+            "我 · 第 " + data.self.rank + " 名 · " + data.self.score + " 分" : "我 · 暂无成绩";
     } catch (error) {
         if (request === rankingRequest) status.textContent = error.name === "TimeoutError" ?
             "读取超时，请稍后重试；本机成绩仍保留" : "连接失败，请稍后重试；本机成绩仍保留";
@@ -166,9 +170,9 @@ function showResult(ended) {
     keys.clear();
     pointers.clear();
     for (const id of ["left", "right"]) document.getElementById(id).classList.remove("pressed");
-    document.getElementById("result-title").textContent = ended ? "游戏结束" : "森林排行榜";
+    document.getElementById("result-title").textContent = ended ? "游戏结束" : "排行榜";
     document.getElementById("result-summary").innerHTML =
-        "本次分数<br><strong>" + score() + "</strong><br>最高纪录 " + (records[0]?.score || 0);
+        "<span>本次 <strong>" + score() + "</strong></span><span>最佳 <b>" + (records[0]?.score || 0) + "</b></span>";
     showLocalRanking();
     document.getElementById("close-result").textContent = ended ? "查看场景" : "继续游戏";
     document.getElementById("play-again").hidden = !gameOver;
@@ -566,12 +570,12 @@ async function loadAssets() {
     const retry = document.getElementById("retry-loading");
     retry.hidden = true;
     let loaded = 0;
-    status.textContent = "正在加载图片 · 0 / " + assets.length;
+    status.textContent = "正在进入游戏 · 0%";
     try {
         await Promise.all(assets.map(async ([image, file]) => {
             image.src = "./assets/images/" + file;
             await image.decode();
-            status.textContent = "正在加载图片 · " + (++loaded) + " / " + assets.length;
+            status.textContent = "正在进入游戏 · " + Math.round(++loaded / assets.length * 100) + "%";
         }));
         resizeCanvas();
         assetsReady = true;
