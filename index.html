@@ -8,6 +8,11 @@
     <script src="src/game.js" defer></script>
 </head>
 <body>
+    <div id="loading" role="status" aria-live="polite">
+        <h1>森林跃跃</h1>
+        <p id="loading-status">正在加载图片</p>
+        <button id="retry-loading" hidden>重新加载</button>
+    </div>
     <main id="playfield">
         <header class="hud">
             <button id="profile-button" aria-label="打开个人主页"><span id="player-name">森林旅人</span><small>主页</small></button>

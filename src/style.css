@@ -1,6 +1,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { background: #342d20; font-family: sans-serif; display: grid; place-items: center; }
+#loading { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #29301e; color: #fff7df; }
+#loading[hidden] { display: none; }
+#loading p { position: static; color: #f2dda9; }
+#retry-loading { padding: 12px 24px; border-radius: 12px; }
 #playfield {
     position: relative; width: min(100vw, calc((100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * .625));
     touch-action: none; user-select: none; -webkit-user-select: none;

@@ -2,8 +2,15 @@
 const board = document.getElementById("board");
 const context = board.getContext("2d");
 const width = 360, height = 576;
-board.width = width;
-board.height = height;
+function resizeCanvas() {
+    const ratio = window.devicePixelRatio || 1;
+    const bounds = board.getBoundingClientRect();
+    board.width = Math.round((bounds.width || width) * ratio);
+    board.height = Math.round(board.width * height / width);
+    context.setTransform(board.width / width, 0, 0, board.height / height, 0, 0);
+    context.imageSmoothingQuality = "high";
+}
+let assetsReady = false;
 const squirrelImage = new Image();
 const squirrelFrames = [
     [21, 234, 285, 311], [341, 283, 296, 261], [641, 233, 297, 312], [961, 214, 272, 297],
@@ -12,10 +19,12 @@ const squirrelFrames = [
 const platformImage = new Image();
 const springImage = new Image();
 const brokenImage = new Image();
-squirrelImage.src = "./assets/images/squirrel-jump-sheet.png";
-platformImage.src = "./assets/images/platform-wood.webp";
-springImage.src = "./assets/images/spring.webp";
-brokenImage.src = "./assets/images/platform-broken-wood.webp";
+const backgroundImage = new Image();
+const assets = [
+    [squirrelImage, "squirrel-jump-sheet.webp"], [platformImage, "platform-wood.webp"],
+    [springImage, "spring.webp"], [brokenImage, "platform-broken-wood.webp"],
+    [backgroundImage, "forest-background.webp"]
+];
 
 const gravity = 1440, jumpSpeed = -480, springSpeed = -900;
 const keys = new Set();
@@ -337,7 +346,7 @@ function steer(event) {
     document.getElementById("right").classList.toggle("pressed", direction === 1);
 }
 playfield.addEventListener("pointerdown", event => {
-    if (gameOver || result.open || profile.open || event.target.closest(".hud, #ranking, dialog")) return;
+    if (!assetsReady || gameOver || result.open || profile.open || event.target.closest(".hud, #ranking, dialog")) return;
     event.preventDefault();
     playfield.setPointerCapture(event.pointerId);
     steer(event);
@@ -355,7 +364,7 @@ for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
     playfield.addEventListener(type, release);
 }
 document.addEventListener("keydown", event => {
-    if (profile.open || event.target.matches("input, textarea")) return;
+    if (!assetsReady || profile.open || event.target.matches("input, textarea")) return;
     if (["ArrowLeft", "ArrowRight", "KeyA", "KeyD", "Space"].includes(event.code)) {
         event.preventDefault();
         if (event.code === "Space" && gameOver) { restart(); return; }
@@ -406,6 +415,30 @@ document.getElementById("online-ranking").addEventListener("click", showOnlineRa
 document.getElementById("play-again").addEventListener("click", restart);
 document.getElementById("close-result").addEventListener("click", () => result.close());
 result.addEventListener("close", clearControls);
-restart();
-if (!hasNickname) showProfile();
-requestAnimationFrame(frame);
+async function loadAssets() {
+    const loading = document.getElementById("loading");
+    const status = document.getElementById("loading-status");
+    const retry = document.getElementById("retry-loading");
+    retry.hidden = true;
+    let loaded = 0;
+    status.textContent = "正在加载图片 · 0 / " + assets.length;
+    try {
+        await Promise.all(assets.map(async ([image, file]) => {
+            image.src = "./assets/images/" + file;
+            await image.decode();
+            status.textContent = "正在加载图片 · " + (++loaded) + " / " + assets.length;
+        }));
+        resizeCanvas();
+        assetsReady = true;
+        restart();
+        loading.hidden = true;
+        if (!hasNickname) showProfile();
+        requestAnimationFrame(frame);
+    } catch {
+        status.textContent = "图片加载失败，请检查网络后重试";
+        retry.hidden = false;
+    }
+}
+window.addEventListener("resize", () => { if (assetsReady) resizeCanvas(); });
+document.getElementById("retry-loading").addEventListener("click", loadAssets);
+loadAssets();

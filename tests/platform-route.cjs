@@ -26,7 +26,7 @@ randomMath.random = () => {
 const sandbox = vm.createContext({
     document, Math: randomMath, window: { addEventListener() {} },
     localStorage: { getItem(key) { return key === "forest-hop-name" ? "测试玩家" : null; }, setItem() {} },
-    Image: class {}, performance: { now() { return 0; } }, requestAnimationFrame() {}
+    Image: class { decode() { return new Promise(() => {}); } }, performance: { now() { return 0; } }, requestAnimationFrame() {}
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8"), sandbox);
 
