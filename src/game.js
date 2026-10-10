@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.0.4";
+const gameVersion = "1.1.0";
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -23,14 +23,21 @@ const springImage = new Image();
 const brokenImage = new Image();
 const backgroundImage = new Image();
 const diamondImage = new Image(), pineconeImage = new Image(), bombImage = new Image();
+const skillImages = Object.fromEntries(["dash", "shield", "glide", "magnet", "feather", "spring-boots"].map(kind => [kind, new Image()]));
 const assets = [
     [squirrelImage, "runtime/squirrel-jump-sheet.webp"], [platformImage, "platform-wood.webp"],
     [springImage, "spring.webp"], [brokenImage, "platform-broken-wood.webp"],
     [backgroundImage, "runtime/forest-warm.webp"], [diamondImage, "runtime/diamond.webp"],
-    [pineconeImage, "runtime/pinecone.webp"], [bombImage, "runtime/bomb.webp"]
+    [pineconeImage, "runtime/pinecone.webp"], [bombImage, "runtime/bomb.webp"],
+    ...Object.entries(skillImages).map(([kind, image]) => [image, "runtime/" + kind + ".webp"])
 ];
 
 const gravity = 1440, jumpSpeed = -480, springSpeed = -900;
+const FEATURES = { dash: true, shield: true, glide: true, magnet: true, feather: true, "spring-boots": true, chains: true };
+const itemNames = { dash: "冲刺", shield: "护心果", glide: "滑翔", magnet: "磁石", feather: "二段跳", "spring-boots": "弹簧靴" };
+const effectTimers = ["dashRemaining", "dashCooldown", "invulnerable", "glideRemaining", "magnetRemaining", "slowRemaining"];
+let hardMode = false, gameTime = 0, combo = 0, collectionChain = null;
+const skillStatus = document.getElementById("skill-status");
 const keys = new Set();
 const pointers = new Map();
 let player, platforms, camera, highest, gameOver, lastTime;
@@ -146,6 +153,7 @@ function showUploadConfirm() {
 
 async function uploadScore() {
     if (!completedRun || uploaded || uploading) return;
+    const run = completedRun;
     uploading = true;
     document.getElementById("confirm-upload").disabled = true;
     document.getElementById("cancel-upload").disabled = true;
@@ -153,12 +161,14 @@ async function uploadScore() {
     status.textContent = "正在上传…";
     try {
         await requestScores({ method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(completedRun) });
+            body: JSON.stringify(run) });
+        if (completedRun !== run) return;
         uploaded = true;
         document.getElementById("submit-score").hidden = true;
         uploadConfirm.close();
         showOnlineRanking();
     } catch (error) {
+        if (completedRun !== run) return;
         status.textContent = error.name === "TimeoutError" ? "请求超时，可以重试；同名记录只保留最高分" :
             error instanceof TypeError ? "连接失败，请检查网络后重试；本机成绩已保存" : error.message;
     } finally {
@@ -231,6 +241,17 @@ function nextPlatform(previous) {
     }
     if (Math.random() < 0.26) platform.item = { kind: Math.random() < 0.25 ? "diamond" : "pinecone",
         x: platform.x + 30, y: platform.y - (spring ? 38 : 18), radius: 10, collected: false };
+    if (platform.item && routeScore >= 40) {
+        const roll = Math.random();
+        const kind = roll < 0.62 ? platform.item.kind : roll < 0.80 ? "shield" :
+            roll < 0.88 ? "dash" : roll < 0.92 ? "spring-boots" : roll < 0.95 ? "glide" : roll < 0.98 ? "magnet" : "feather";
+        const threshold = { shield: 40, dash: 60, "spring-boots": 120, glide: 180, magnet: 200, feather: 250 };
+        if (FEATURES[kind] && routeScore >= threshold[kind] &&
+            (!["dash", "spring-boots", "feather"].includes(kind) || (!spring && !springGap && !previous.spring))) platform.item.kind = kind;
+    }
+    if (hardMode && routeScore >= 300 && !spring && !springGap && Math.random() < 0.12) {
+        platform.wind = Math.random() < 0.5 ? -60 : 60;
+    }
     // Extra boards offer choices; the main route remains clear at every motion phase.
     platform.extras = [];
     const candidates = [];
@@ -248,6 +269,11 @@ function nextPlatform(previous) {
         const outsideExit = Math.abs(center - (x + 30)) > 145 + amplitude;
         if (routeScore >= 180 && (center < left || center > right) && outsideExit && Math.random() < 0.6) {
             extra.hazard = { x: center, y: extra.y - 19, radius: 15, kind: "bomb" };
+        }
+        if (hardMode && routeScore >= 300 && !extra.hazard) {
+            if (Math.random() < 0.3) extra.mossy = true;
+            else if (Math.random() < 0.2 && (center < left || center > right) && outsideExit)
+                extra.hazard = { x: center, y: extra.y - 19, radius: 15, kind: "hive", triggered: false };
         }
         platform.extras.push(extra);
         for (let j = candidates.length - 1; j >= 0; j--) {
@@ -279,6 +305,12 @@ function restart() {
     if (result.open) result.close();
     for (const id of ["left", "right"]) document.getElementById(id).classList.remove("pressed");
     player = { x: 157, y: 458, width: 46, height: 46, vy: jumpSpeed, facing: 1, jumpTime: 0 };
+    Object.assign(player, { dashCharges: 0, dashRemaining: 0, dashCooldown: 0, dashBombs: 0,
+        shield: false, invulnerable: 0, glideRemaining: 0, magnetRemaining: 0, featherCharges: 0,
+        featherUsed: false, bootsCharges: 0, bootsArmed: false, slowRemaining: 0 });
+    gameTime = 0;
+    combo = 0;
+    collectionChain = null;
     bonusScore = 0;
     highest = player.y;
     platforms = [makePlatform(526, 150, false)];
@@ -306,8 +338,92 @@ function movingSpeed() {
     return 12 + Math.min(1, Math.max(0, (score() - 2000) / 2000)) * 24;
 }
 
+function useSkill(kind) {
+    if (!assetsReady || gameOver || result.open || profile.open || document.hidden) return;
+    if (kind === "dash" && player.dashCharges > 0 && player.dashCooldown <= 0 && player.dashRemaining <= 0) {
+        player.dashCharges--;
+        player.dashRemaining = 0.30;
+        player.dashCooldown = 0.5;
+        player.dashBombs = 0;
+    } else if (kind === "feather" && player.featherCharges > 0 && !player.featherUsed) {
+        player.featherCharges--;
+        player.featherUsed = true;
+        player.vy = jumpSpeed;
+        player.jumpTime = 0;
+    } else if (kind === "spring-boots" && player.bootsCharges > 0 && !player.bootsArmed) {
+        player.bootsCharges--;
+        player.bootsArmed = true;
+    }
+}
+
+function award(points, x, y) {
+    bonusScore += points;
+    pickupEffects.push({ x, y, points, life: 0.7 });
+}
+
+function collectItem(item) {
+    item.collected = true;
+    const kind = item.kind;
+    if (kind === "pinecone" || kind === "diamond") {
+        const multiplier = FEATURES.chains ? Math.min(2, 1 + Math.floor(combo / 5) * 0.1) : 1;
+        award(Math.round((kind === "diamond" ? 30 : 10) * multiplier), item.x, item.y);
+        if (FEATURES.chains) {
+            if (!collectionChain || gameTime - collectionChain.started > 4)
+                collectionChain = { started: gameTime, kinds: new Set() };
+            collectionChain.kinds.add(kind);
+            if (collectionChain.kinds.size === 2) {
+                award(20, item.x, item.y - 18);
+                collectionChain = null;
+            }
+            if (item.x < 35 || item.x > width - 35) award(5, item.x, item.y - 32);
+        }
+    } else {
+        if (kind === "shield") player.shield = true;
+        if (kind === "dash") player.dashCharges = Math.min(2, (player.dashCharges || 0) + 1);
+        if (kind === "feather") player.featherCharges = Math.min(2, (player.featherCharges || 0) + 1);
+        if (kind === "spring-boots") player.bootsCharges = Math.min(2, (player.bootsCharges || 0) + 1);
+        if (kind === "glide") player.glideRemaining = 2.5;
+        if (kind === "magnet") player.magnetRemaining = 6;
+        award(5, item.x, item.y);
+        pickupEffects[pickupEffects.length - 1].label = itemNames[kind];
+    }
+}
+
+function absorbHit(falling = false) {
+    if (player.invulnerable > 0 && !falling) return true;
+    if (!player.shield) return false;
+    player.shield = false;
+    player.invulnerable = 1;
+    combo = 0;
+    if (falling) {
+        // Reconnect below a surviving main-route board, within an ordinary jump's reach.
+        const extras = new Set(platforms.flatMap(platform => platform.extras || []));
+        let target;
+        for (const platform of platforms) {
+            if (extras.has(platform) || platform.hazard || platform.y > camera + height - 100) continue;
+            if (!target || platform.y > target.y) target = platform;
+        }
+        target.broken = false;
+        target.fragile = false;
+        const y = target.y + 50;
+        const x = target.x;
+        platforms.unshift(makePlatform(y, x));
+        player.x = x + 7;
+        player.y = y - player.height;
+        player.vy = jumpSpeed;
+        player.jumpTime = 0;
+        player.featherUsed = false;
+        player.dashRemaining = 0;
+    }
+    return true;
+}
+
 function step(dt) {
     if (gameOver || result.open || profile.open || document.hidden) return;
+    gameTime += dt;
+    let dashing = player.dashRemaining > 1e-9;
+    for (const field of effectTimers)
+        player[field] = Math.max(0, (player[field] || 0) - dt);
     pickupEffects = pickupEffects.filter(effect => effect.life > 0);
     for (const effect of pickupEffects) { effect.life -= dt; effect.y -= 24 * dt; }
     for (const platform of platforms) {
@@ -315,7 +431,7 @@ function step(dt) {
             const motion = platform.motion;
             motion.phase += movingSpeed() / motion.amplitude * dt;
             platform.x = motion.baseX + Math.sin(motion.phase) * motion.amplitude;
-            if (platform.item) platform.item.x = platform.x + 30;
+            if (platform.item && !platform.item.attracted) platform.item.x = platform.x + 30;
         }
     }
     fragments = fragments.filter(piece => piece.life > 0);
@@ -328,14 +444,26 @@ function step(dt) {
     const left = keys.has("ArrowLeft") || keys.has("KeyA") || [...pointers.values()].includes(-1);
     const right = keys.has("ArrowRight") || keys.has("KeyD") || [...pointers.values()].includes(1);
     const direction = Number(right) - Number(left);
-    player.x += direction * 240 * dt;
+    const moveSpeed = player.slowRemaining > 0 ? 120 : player.glideRemaining > 0 ? 300 : 240;
+    player.x += direction * moveSpeed * dt;
     if (direction) player.facing = direction;
     player.jumpTime = (player.jumpTime || 0) + dt;
     if (player.x > width) player.x = -player.width;
     if (player.x + player.width < 0) player.x = width;
 
     const previousBottom = player.y + player.height;
-    player.vy += gravity * dt;
+    if (dashing) player.vy = -780;
+    else player.vy += gravity * dt;
+    if (player.glideRemaining > 0) player.vy = Math.min(player.vy, 220);
+    if (hardMode && !dashing) {
+        for (const platform of platforms) {
+            if (platform.wind && Math.abs(player.y + player.height - platform.y) < 90 &&
+                player.x + player.width > platform.x && player.x < platform.x + platform.width) {
+                player.vy += platform.wind * dt;
+                break;
+            }
+        }
+    }
     player.y += player.vy * dt;
     if (player.vy >= 0) {
         for (const platform of platforms) {
@@ -350,7 +478,14 @@ function step(dt) {
             const crossesPlatform = overlaps && previousBottom <= platform.y && bottom >= platform.y;
             if (crossesSpring || crossesPlatform) {
                 player.y = (crossesSpring ? platform.y - 20 : platform.y) - player.height;
-                player.vy = hitsSpring ? springSpeed : jumpSpeed;
+                player.vy = hitsSpring || player.bootsArmed ? springSpeed : jumpSpeed;
+                player.bootsArmed = false;
+                player.featherUsed = false;
+                if (hitsSpring) { player.dashRemaining = 0; dashing = false; }
+                if (platform.mossy) player.slowRemaining = 0.4;
+                if (platform.fragile) combo = 0;
+                else if (!platform.comboVisited) combo++;
+                platform.comboVisited = true;
                 player.jumpTime = 0;
                 if (platform.fragile) {
                     platform.broken = true;
@@ -367,16 +502,38 @@ function step(dt) {
 
     for (const platform of platforms) {
         const hazard = platform.hazard;
+        if (hazard?.kind === "hive" && !hazard.triggered && Math.abs(player.y - hazard.y) < 160) {
+            hazard.triggered = true;
+            hazard.releaseAt = gameTime + 2;
+        }
+        if (hazard?.kind === "hive" && hazard.triggered && gameTime >= hazard.releaseAt) {
+            hazard.kind = "bug";
+            hazard.direction = hazard.x < player.x + player.width / 2 ? 1 : -1;
+        }
+        if (hazard?.kind === "bug") {
+            hazard.x += hazard.direction * 70 * dt;
+            if (hazard.x < -20 || hazard.x > width + 20) { delete platform.hazard; continue; }
+        }
         if (hazard && touchesCircle(hazard)) {
-            finish();
-            return;
+            if (dashing && player.dashBombs < 1) {
+                delete platform.hazard;
+                player.dashBombs++;
+                award(15, hazard.x, hazard.y);
+            } else if (absorbHit()) delete platform.hazard;
+            else { finish(); return; }
         }
         const item = platform.item;
+        if (item && !item.collected && player.magnetRemaining > 0) {
+            const dx = player.x + player.width / 2 - item.x, dy = player.y + player.height / 2 - item.y;
+            if (dx * dx + dy * dy < 90 * 90) {
+                item.attracted = true;
+                const fraction = Math.min(1, dt * 9);
+                item.x += dx * fraction;
+                item.y += dy * fraction;
+            }
+        }
         if (item && !item.collected && touchesCircle(item)) {
-            item.collected = true;
-            const points = item.kind === "diamond" ? 30 : 10;
-            bonusScore += points;
-            pickupEffects.push({ x: item.x, y: item.y, points, life: 0.7 });
+            collectItem(item);
         }
     }
     highest = Math.min(highest, player.y);
@@ -388,7 +545,7 @@ function step(dt) {
         const next = nextPlatform(previous);
         platforms.push(...next.extras, next);
     }
-    if (player.y - camera > height) finish();
+    if (player.y - camera > height && !absorbHit(true)) finish();
 }
 
 function characterFrame() {
@@ -436,6 +593,15 @@ function draw() {
             context.lineTo(platform.x + 48, y + 13);
             context.stroke();
         }
+        if (platform.mossy) {
+            context.fillStyle = "#538346";
+            context.fillRect(platform.x + 3, y, 54, 4);
+        }
+        if (platform.wind) {
+            context.fillStyle = "#487e9980";
+            context.font = "bold 20px sans-serif";
+            context.fillText(platform.wind < 0 ? "↑" : "↓", platform.x + 25, y - 35);
+        }
         if (platform.spring && springImage.complete && springImage.naturalWidth) {
             const springHeight = performance.now() < platform.compressedUntil ? 12 : 20;
             context.drawImage(springImage, platform.x + 19, y + 3 - springHeight, 22, springHeight);
@@ -454,24 +620,74 @@ function draw() {
         if (platform.hazard) {
             const hazard = platform.hazard;
             const y = hazard.y - camera;
-            context.drawImage(bombImage, hazard.x - 19, y - 19, 38, 38);
+            if (hazard.kind === "bomb") context.drawImage(bombImage, hazard.x - 19, y - 19, 38, 38);
+            else {
+                context.fillStyle = hazard.kind === "bug" ? "#d78f29" : "#936329";
+                context.beginPath();
+                context.ellipse(hazard.x, y, 15, hazard.kind === "bug" ? 8 : 18, 0, 0, Math.PI * 2);
+                context.fill();
+                context.fillStyle = "#51351e";
+                context.font = "bold 14px sans-serif";
+                context.fillText(hazard.kind === "bug" ? "≋" : "蜂", hazard.x - 7, y + 5);
+            }
         }
         if (platform.item && !platform.item.collected) {
             const item = platform.item;
-            context.drawImage(item.kind === "diamond" ? diamondImage : pineconeImage,
+            context.drawImage(skillImages[item.kind] || (item.kind === "diamond" ? diamondImage : pineconeImage),
                 item.x - 14, item.y - camera - 14, 28, 28);
         }
     }
+    if (player.dashRemaining > 0) {
+        const originalY = player.y;
+        for (let i = 3; i > 0; i--) {
+            player.y = originalY + i * 12;
+            context.globalAlpha = (4 - i) * 0.12;
+            drawCharacter();
+        }
+        player.y = originalY;
+        context.globalAlpha = 1;
+    }
     drawCharacter();
+    if (player.invulnerable > 0 && !player.shield) {
+        context.fillStyle = "#fff7df";
+        context.globalAlpha = 0.15 + 0.15 * Math.sin(gameTime * 30);
+        context.beginPath();
+        context.arc(player.x + 23, player.y - camera + 23, 25, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = 1;
+    }
+    if (player.shield) {
+        context.strokeStyle = "#e8ae41";
+        context.lineWidth = 3;
+        context.beginPath();
+        context.arc(player.x + 23, player.y - camera + 23, 28, 0, Math.PI * 2);
+        context.stroke();
+    }
+    if (player.glideRemaining > 0) context.drawImage(skillImages.glide, player.x + 5, player.y - camera - 24, 36, 28);
     for (const effect of pickupEffects) {
         context.globalAlpha = Math.max(0, effect.life / 0.7);
         context.fillStyle = "#244834";
         context.font = "bold 15px sans-serif";
-        context.fillText("+" + effect.points, effect.x - 10, effect.y - camera);
+        context.fillText((effect.label ? effect.label + " " : "") + "+" + effect.points, effect.x - 10, effect.y - camera);
     }
     context.globalAlpha = 1;
     currentScore.textContent = score();
     bestScore.textContent = Math.max(score(), records[0]?.score || 0);
+    const states = [];
+    if (player.shield) states.push("护盾 ♥");
+    if (player.glideRemaining > 0) states.push("滑翔 " + player.glideRemaining.toFixed(1) + "s");
+    if (player.magnetRemaining > 0) states.push("磁石 " + player.magnetRemaining.toFixed(1) + "s");
+    if (combo >= 5) states.push("连击 ×" + Math.min(2, 1 + Math.floor(combo / 5) * 0.1).toFixed(1));
+    skillStatus.textContent = states.join(" · ");
+    skillStatus.parentElement.hidden = !states.length && !player.bootsArmed;
+    for (const [kind, charges] of [["dash", player.dashCharges], ["feather", player.featherCharges], ["spring-boots", player.bootsCharges]]) {
+        const button = document.getElementById("skill-" + kind);
+        button.hidden = !charges && !(kind === "spring-boots" && player.bootsArmed) && !(kind === "dash" && player.dashRemaining > 0);
+        button.disabled = gameOver || !charges || (kind === "dash" && player.dashCooldown > 0) ||
+            (kind === "feather" && player.featherUsed) || (kind === "spring-boots" && player.bootsArmed);
+        button.querySelector("span").textContent = kind === "spring-boots" && player.bootsArmed ? "✓" : String(charges || 0);
+    }
+    document.getElementById("boots-status").textContent = player.bootsArmed ? "下一跳弹簧靴" : "";
 }
 
 function frame(time) {
@@ -489,14 +705,14 @@ function frame(time) {
 
 const playfield = document.getElementById("playfield");
 function steer(event) {
-    const bounds = playfield.getBoundingClientRect();
+    const bounds = board.getBoundingClientRect();
     const direction = event.clientX < bounds.left + bounds.width / 2 ? -1 : 1;
     pointers.set(event.pointerId, direction);
     document.getElementById("left").classList.toggle("pressed", direction === -1);
     document.getElementById("right").classList.toggle("pressed", direction === 1);
 }
 playfield.addEventListener("pointerdown", event => {
-    if (!assetsReady || gameOver || result.open || profile.open || event.target.closest(".hud, #ranking, dialog")) return;
+    if (!assetsReady || gameOver || result.open || profile.open || event.target.closest(".hud, .skill-bar, .skill-controls, .item-button, #ranking, dialog")) return;
     event.preventDefault();
     playfield.setPointerCapture(event.pointerId);
     steer(event);
@@ -513,12 +729,32 @@ function release(event) {
 for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
     playfield.addEventListener(type, release);
 }
+for (const kind of ["dash", "feather", "spring-boots"]) {
+    document.getElementById("skill-" + kind).addEventListener("pointerdown", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        useSkill(kind);
+    });
+    document.getElementById("skill-" + kind).addEventListener("click", event => {
+        if (event.detail === 0) useSkill(kind);
+    });
+}
+document.getElementById("hard-mode").addEventListener("change", event => {
+    hardMode = event.target.checked;
+    restart();
+});
+
 document.addEventListener("keydown", event => {
     if (!assetsReady || profile.open || event.target.matches("input, textarea")) return;
-    if (["ArrowLeft", "ArrowRight", "KeyA", "KeyD", "Space"].includes(event.code)) {
+    if (event.code === "Space" && event.target.matches("button")) return;
+    if (["ArrowLeft", "ArrowRight", "KeyA", "KeyD", "Space", "ArrowUp", "KeyK", "KeyF", "KeyB"].includes(event.code)) {
         event.preventDefault();
         if (event.code === "Space" && gameOver) { restart(); return; }
         if (result.open) return;
+        if (["Space", "ArrowUp", "KeyK", "KeyF", "KeyB"].includes(event.code)) {
+            if (!event.repeat) useSkill(event.code === "KeyF" ? "feather" : event.code === "KeyB" ? "spring-boots" : "dash");
+            return;
+        }
         keys.add(event.code);
         if (event.code === "Space" && gameOver) restart();
     }
@@ -559,6 +795,10 @@ document.getElementById("profile-form").addEventListener("submit", event => {
 });
 document.getElementById("nickname").addEventListener("input", event => event.target.setCustomValidity(""));
 profile.addEventListener("close", clearControls);
+const itemHelp = document.getElementById("item-help");
+document.getElementById("open-item-help").addEventListener("click", () => itemHelp.showModal());
+document.getElementById("close-item-help").addEventListener("click", () => itemHelp.close());
+itemHelp.addEventListener("close", clearControls);
 document.getElementById("ranking").addEventListener("click", () => showResult(false));
 document.getElementById("local-ranking").addEventListener("click", showLocalRanking);
 document.getElementById("online-ranking").addEventListener("click", showOnlineRanking);

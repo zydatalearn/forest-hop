@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>森林跃跃 · Forest Hop</title>
-    <link rel="stylesheet" href="src/style.css?v=1.0.4">
-    <script src="src/game.js?v=1.0.4" defer></script>
+    <link rel="stylesheet" href="src/style.css?v=1.1.0">
+    <script src="src/game.js?v=1.1.0" defer></script>
 </head>
 <body>
     <div id="loading" role="status" aria-live="polite">
@@ -19,16 +19,23 @@
             <button id="ranking" class="ranking-button">排行</button>
             <div class="score-panel"><span>得分 <strong id="current-score">0</strong></span><small>最高分 <b id="best-score">0</b></small></div>
         </header>
+        <div class="skill-bar" hidden><span id="skill-status"></span><span id="boots-status"></span></div>
         <canvas id="board" aria-label="森林跃跃游戏"></canvas>
+        <div class="skill-controls">
+            <button class="item-button" id="skill-dash" hidden aria-label="冲刺，空格或 K"><img src="assets/images/runtime/dash.webp" alt=""><span>0</span></button>
+            <button class="item-button" id="skill-feather" hidden aria-label="二段跳，F"><img src="assets/images/runtime/feather.webp" alt=""><span>0</span></button>
+            <button class="item-button" id="skill-spring-boots" hidden aria-label="启动弹簧靴，B"><img src="assets/images/runtime/spring-boots.webp" alt=""><span>0</span></button>
+        </div>
         <div class="controls">
             <button id="left" aria-label="向左">❮</button>
             <button id="right" aria-label="向右">❯</button>
         </div>
-        <p>松果 +10 · 钻石 +30 · 避开木板上的炸弹</p>
         <dialog id="profile">
             <div class="modal-header">FOREST HOP</div>
             <h1>个人主页</h1>
             <div id="profile-summary"></div>
+            <label class="mode-choice"><input type="checkbox" id="hard-mode"> 高难度：苔藓、蜂窝、风区（切换重开）</label>
+            <button id="open-item-help" type="button">道具说明</button>
             <form id="profile-form">
                 <label for="nickname">昵称</label>
                 <input id="nickname" name="nickname" maxlength="12" required placeholder="输入昵称（最多 12 个字）" autocomplete="nickname">
@@ -37,6 +44,19 @@
             </form>
             <small>昵称与成绩保存在当前浏览器</small>
             <div><small id="game-version"></small></div>
+        </dialog>
+        <dialog id="item-help">
+            <h1>道具说明</h1>
+            <p class="help-intro">手机点技能图标；电脑按对应键。</p>
+            <dl>
+                <dt>冲刺 · 空格 / ↑ / K</dt><dd>向上冲刺，撞碎一个危险物。</dd>
+                <dt>羽毛 · F</dt><dd>空中再跳一次。</dd>
+                <dt>弹簧靴 · B</dt><dd>强化下一次起跳。</dd>
+                <dt>护心果</dt><dd>自动抵挡一次危险或坠落。</dd>
+                <dt>滑翔叶 / 磁石</dt><dd>自动缓降 2.5 秒 / 吸附 6 秒。</dd>
+            </dl>
+            <p class="help-rewards">连踩完整木板加分；4 秒内收集松果和钻石额外 +20。</p>
+            <div class="modal-actions"><button id="close-item-help" type="button">知道了</button></div>
         </dialog>
         <dialog id="result">
             <h1 id="result-title">游戏结束</h1>

@@ -31,6 +31,8 @@ const sandbox = vm.createContext({
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8"), sandbox);
 
 const checked = vm.runInContext(`
+    // Preserve the original physics and scoring contract with optional expansions disabled.
+    if (${!process.argv.includes("--expanded")}) for (const kind of Object.keys(FEATURES)) FEATURES[kind] = false;
     let checked = 0, mandatory = 0, hazards = 0, moving = 0, bombs = 0;
     for (let route = 0; route < 100; route++) {
         let source = makePlatform(526, 150);
@@ -104,6 +106,7 @@ const checked = vm.runInContext(`
         }
     }
     bonusScore = 0;
+    FEATURES.chains = false;
     player = { x: 140, y: 200, width: 46, height: 46, vy: 0, facing: 1, jumpTime: 0 };
     platforms = [makePlatform(300, 140), makePlatform(-10000, 140)];
     platforms[0].item = { kind: "diamond", x: 163, y: 223, radius: 10, collected: false };

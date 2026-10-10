@@ -6,7 +6,7 @@ body { background: #342d20; font-family: sans-serif; display: grid; place-items:
 #loading p { position: static; color: #f2dda9; }
 #retry-loading { padding: 12px 24px; border-radius: 12px; }
 #playfield {
-    position: relative; width: min(100vw, calc((100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * .625));
+    position: relative; width: min(100vw, calc((100dvh - 84px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * .625));
     touch-action: none; user-select: none; -webkit-user-select: none;
 }
 #board {
@@ -29,6 +29,21 @@ button {
     color: #795c31; text-shadow: 0 1px #fff5d4;
 }
 .controls button.pressed, .controls button:active { background: rgba(255, 230, 156, .65); }
+.skill-bar { height: 28px; padding: 5px 6px; background: #684b30; color: #fff3c3; font-size: 10px; display: flex; justify-content: space-between; gap: 4px; }
+.skill-bar[hidden] { display: none; }
+.skill-controls { position: absolute; right: 4%; bottom: 23%; display: flex; flex-direction: column; gap: 6px; }
+.item-button { position: relative; width: 44px; min-height: 44px; padding: 4px; border: 1px solid #fff3c366; border-radius: 50%; background: #fff3d64d; color: #51351e; font-size: 10px; }
+.item-button img { display: block; width: 28px; height: 28px; margin: auto; object-fit: contain; }
+.item-button span { position: absolute; right: 0; bottom: 0; min-width: 16px; border-radius: 8px; background: #fff3d6cc; font-weight: bold; }
+.item-button:disabled { opacity: .45; cursor: default; }
+.mode-choice { display: block; margin: 0 0 16px; font-size: 12px; text-align: left; }
+#open-item-help { display: block; margin-bottom: 16px; padding: 8px 12px; border: 1px solid #bfa56b; border-radius: 10px; font-size: 13px; }
+#item-help { text-align: left; }
+#item-help h1 { font-size: 22px; }
+#item-help p { position: static; text-align: left; font-size: 12px; line-height: 1.5; }
+#item-help dl { font-size: 13px; line-height: 1.5; }
+#item-help dt { margin-top: 10px; font-weight: bold; }
+#item-help dd { margin: 2px 0 0; }
 p { position: absolute; bottom: 1%; width: 100%; text-align: center; color: #4a351d; font-size: 12px; pointer-events: none; }
 
 .hud { height: calc(56px + env(safe-area-inset-top)); padding: calc(6px + env(safe-area-inset-top)) 6px 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.5fr); gap: 6px; align-items: center; background: #513b27; color: #fff7df; }
