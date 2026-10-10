@@ -420,16 +420,6 @@ function draw() {
         context.drawImage(backgroundImage, 0, -offset, width, height * 1.2);
     }
     for (const platform of platforms) {
-        if (platform.hazard) {
-            const hazard = platform.hazard;
-            const y = hazard.y - camera;
-            context.drawImage(bombImage, hazard.x - 19, y - 19, 38, 38);
-        }
-        if (platform.item && !platform.item.collected) {
-            const item = platform.item;
-            context.drawImage(item.kind === "diamond" ? diamondImage : pineconeImage,
-                item.x - 14, item.y - camera - 14, 28, 28);
-        }
         if (platform.broken) continue;
         const y = platform.y - camera;
         const image = platform.fragile ? brokenImage : platformImage;
@@ -456,6 +446,19 @@ function draw() {
                 piece.x, piece.y - camera, 30, 18);
         }
         context.globalAlpha = 1;
+    }
+    // Items and hazards sit in front of every board, spring and falling fragment.
+    for (const platform of platforms) {
+        if (platform.hazard) {
+            const hazard = platform.hazard;
+            const y = hazard.y - camera;
+            context.drawImage(bombImage, hazard.x - 19, y - 19, 38, 38);
+        }
+        if (platform.item && !platform.item.collected) {
+            const item = platform.item;
+            context.drawImage(item.kind === "diamond" ? diamondImage : pineconeImage,
+                item.x - 14, item.y - camera - 14, 28, 28);
+        }
     }
     drawCharacter();
     for (const effect of pickupEffects) {
