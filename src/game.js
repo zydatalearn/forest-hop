@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.1.1";
+const gameVersion = "1.2.0";
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -33,10 +33,12 @@ const assets = [
 ];
 
 const gravity = 1440, jumpSpeed = -480, springSpeed = -900;
-const FEATURES = { dash: true, shield: true, glide: true, magnet: true, feather: true, "spring-boots": true, chains: true };
+const FEATURES = { dash: true, shield: true, glide: true, magnet: true, feather: true, "spring-boots": true, chains: true,
+    pressure: true, waves: true, satiety: true };
 const itemNames = { dash: "冲刺", shield: "护心果", glide: "滑翔", magnet: "磁石", feather: "二段跳", "spring-boots": "弹簧靴" };
 const effectTimers = ["dashRemaining", "dashCooldown", "invulnerable", "glideRemaining", "magnetRemaining", "slowRemaining"];
 let hardMode = false, gameTime = 0, combo = 0, collectionChain = null;
+let bombWave = null, nextWaveAt = null, satiety = null, deathReason = "";
 const skillStatus = document.getElementById("skill-status");
 const keys = new Set();
 const pointers = new Map();
@@ -70,8 +72,19 @@ try {
     localStorage.setItem("forest-hop-scores", JSON.stringify(records));
 } catch { /* Storage may be unavailable; keep scores for this session. */ }
 
+function altitude() {
+    return Math.max(0, Math.floor((458 - highest) / 10));
+}
+
+function heightMultiplier() {
+    const meters = altitude();
+    return meters >= 8000 ? 1.75 : meters >= 5000 ? 1.5 : meters >= 2000 ? 1.25 : 1;
+}
+
 function score() {
-    return Math.max(0, Math.floor((458 - highest) / 10)) + bonusScore;
+    const meters = altitude();
+    return Math.floor(meters + Math.max(0, meters - 2000) * 0.25 +
+        Math.max(0, meters - 5000) * 0.25 + Math.max(0, meters - 8000) * 0.25) + bonusScore;
 }
 
 function clearControls() {
@@ -182,7 +195,7 @@ function showResult(ended) {
     keys.clear();
     pointers.clear();
     for (const id of ["left", "right"]) document.getElementById(id).classList.remove("pressed");
-    document.getElementById("result-title").textContent = ended ? "游戏结束" : "排行榜";
+    document.getElementById("result-title").textContent = ended ? deathReason || "游戏结束" : "排行榜";
     document.getElementById("result-summary").innerHTML =
         "<span>本次 <strong>" + score() + "</strong></span><span>最佳 <b>" + (records[0]?.score || 0) + "</b></span>";
     showLocalRanking();
@@ -192,8 +205,9 @@ function showResult(ended) {
     if (!result.open) result.showModal();
 }
 
-function finish() {
+function finish(reason = "") {
     gameOver = true;
+    deathReason = reason;
     completedRun = Object.freeze({ name: nickname, score: score() });
     records.push(completedRun);
     records.sort((a, b) => b.score - a.score);
@@ -204,7 +218,20 @@ function finish() {
 }
 
 function makePlatform(y, x, spring = false, fragile = false) {
-    return { x, y, width: 60, height: 18, spring, fragile: fragile || score() >= 5000, broken: false, compressedUntil: 0, requiredSpring: false };
+    return { x, y, width: 60, height: 18, spring, fragile: fragile || altitude() >= 5000, broken: false, compressedUntil: 0, requiredSpring: false };
+}
+
+function placeFood(platform) {
+    platform.foodGuaranteed = true;
+    platform.foodChecked = true;
+    platform.item = { kind: platform.item?.kind === "diamond" ? "diamond" : "pinecone",
+        x: platform.x + 30, y: platform.y - (platform.spring ? 38 : 18), radius: 10, collected: false };
+}
+
+function ordinaryBombChance() {
+    if (!FEATURES.pressure) return 0.6;
+    if (FEATURES.waves && altitude() >= 2000) return bombWave ? 0 : 0.18;
+    return 0.45 + Math.min(1, altitude() / 1000) * 0.35;
 }
 
 function nextPlatform(previous) {
@@ -220,7 +247,7 @@ function nextPlatform(previous) {
     const speed = previous.spring ? -springSpeed : -jumpSpeed;
     const landingTime = (speed + Math.sqrt(speed * speed - 2 * gravity * rise)) / gravity;
     // Leave reaction time and do not require screen wrapping to reach the next center.
-    const moving = score() >= 2000 && !previous.motion && !previous.spring &&
+    const moving = altitude() >= 2000 && !previous.motion && !previous.spring &&
         !spring && !springGap && Math.random() < 0.3;
     const amplitude = moving ? 18 : 0;
     const sourceX = previous.motion ? previous.motion.baseX : previous.x;
@@ -230,11 +257,12 @@ function nextPlatform(previous) {
     const x = Math.max(amplitude, Math.min(width - 60 - amplitude, sourceX + (Math.random() * 2 - 1) * maxShift));
     if (springGap) {
         previous.requiredSpring = true;
-        previous.fragile = score() >= 5000;
+        previous.fragile = altitude() >= 5000;
     }
     const fragile = !moving && !spring && !springGap && !previous.spring && !previous.fragile &&
         Math.random() < 0.12 + difficulty * 0.18;
     const platform = makePlatform(previous.y - gap, x, spring, fragile);
+    platform.routeIndex = (previous.routeIndex || 0) + 1;
     if (moving) {
         platform.motion = { baseX: x, amplitude, phase: Math.random() * Math.PI * 2 };
         platform.x = x + Math.sin(platform.motion.phase) * amplitude;
@@ -249,6 +277,7 @@ function nextPlatform(previous) {
         if (FEATURES[kind] && routeScore >= threshold[kind] &&
             (!["dash", "spring-boots", "feather"].includes(kind) || (!spring && !springGap && !previous.spring))) platform.item.kind = kind;
     }
+    if (FEATURES.satiety && altitude() >= 8000 && platform.routeIndex % 3 === 0) placeFood(platform);
     if (hardMode && routeScore >= 300 && !spring && !springGap && Math.random() < 0.12) {
         platform.wind = Math.random() < 0.5 ? -60 : 60;
     }
@@ -267,10 +296,13 @@ function nextPlatform(previous) {
         const right = Math.max(sourceX + (previous.motion?.amplitude || 0), x + amplitude) + 95;
         // Also reserve room for the next outgoing jump from this safe board.
         const outsideExit = Math.abs(center - (x + 30)) > 145 + amplitude;
-        if (routeScore >= 180 && (center < left || center > right) && outsideExit && Math.random() < 0.6) {
+        const normalBombs = platforms?.reduce((count, board) => count + Number(board.hazard?.kind === "bomb"), 0) || 0;
+        const bombLimit = altitude() >= 2000 ? 1 : 4;
+        if ((routeScore >= 180 || (FEATURES.pressure && altitude() >= 1000)) &&
+            (center < left || center > right) && outsideExit && normalBombs < bombLimit && Math.random() < ordinaryBombChance()) {
             extra.hazard = { x: center, y: extra.y - 19, radius: 15, kind: "bomb" };
         }
-        if (hardMode && routeScore >= 300 && !extra.hazard) {
+        if (hardMode && !bombWave && routeScore >= 300 && !extra.hazard) {
             if (Math.random() < 0.3) extra.mossy = true;
             else if (Math.random() < 0.2 && (center < left || center > right) && outsideExit)
                 extra.hazard = { x: center, y: extra.y - 19, radius: 15, kind: "hive", triggered: false };
@@ -291,6 +323,7 @@ function nextPlatform(previous) {
                 itemX + itemRange + 14 > boardX - boardRange &&
                 itemX - itemRange - 14 < boardX + boardRange + board.width) {
                 delete previous.item;
+                if (previous.foodGuaranteed && FEATURES.satiety) placeFood(platform);
                 break;
             }
         }
@@ -311,6 +344,10 @@ function restart() {
     gameTime = 0;
     combo = 0;
     collectionChain = null;
+    bombWave = null;
+    nextWaveAt = null;
+    satiety = null;
+    deathReason = "";
     bonusScore = 0;
     highest = player.y;
     platforms = [makePlatform(526, 150, false)];
@@ -335,7 +372,7 @@ function touchesCircle(circle) {
 }
 
 function movingSpeed() {
-    return 12 + Math.min(1, Math.max(0, (score() - 2000) / 2000)) * 24;
+    return 12 + Math.min(1, Math.max(0, (altitude() - 2000) / 2000)) * 24;
 }
 
 function useSkill(kind) {
@@ -365,8 +402,9 @@ function collectItem(item) {
     item.collected = true;
     const kind = item.kind;
     if (kind === "pinecone" || kind === "diamond") {
+        if (satiety !== null) satiety = Math.min(15, satiety + (kind === "diamond" ? 8 : 4));
         const multiplier = FEATURES.chains ? Math.min(2, 1 + Math.floor(combo / 5) * 0.1) : 1;
-        award(Math.round((kind === "diamond" ? 30 : 10) * multiplier), item.x, item.y);
+        award(Math.round((kind === "diamond" ? 30 : 10) * multiplier * heightMultiplier()), item.x, item.y);
         if (FEATURES.chains) {
             if (!collectionChain || gameTime - collectionChain.started > 4)
                 collectionChain = { started: gameTime, kinds: new Set() };
@@ -404,7 +442,7 @@ function absorbHit(falling = false) {
             if (!target || platform.y > target.y) target = platform;
         }
         target.broken = false;
-        target.fragile = score() >= 5000;
+        target.fragile = altitude() >= 5000;
         const y = target.y + 50;
         const x = target.x;
         platforms.unshift(makePlatform(y, x));
@@ -418,17 +456,66 @@ function absorbHit(falling = false) {
     return true;
 }
 
+function updatePressure(dt) {
+    if (FEATURES.satiety && altitude() >= 8000) {
+        satiety = satiety === null ? 15 : Math.max(0, satiety - dt);
+        // Upgrade boards already generated before the threshold; never regenerate eaten snacks.
+        let pendingFood = false;
+        for (const platform of platforms) {
+            if (!platform.extras || platform.foodChecked || platform.broken) continue;
+            platform.foodChecked = true;
+            if (platform.routeIndex % 3 === 0) pendingFood = true;
+            if (!pendingFood || platform.item?.collected) continue;
+            const itemY = platform.y - (platform.spring ? 38 : 18);
+            const itemX = (platform.motion?.baseX ?? platform.x) + 30;
+            const itemRange = platform.motion?.amplitude || 0;
+            const overlaps = platforms.some(upper => upper.y < platform.y &&
+                itemY + 14 > upper.y && itemY - 14 < upper.y + upper.height &&
+                itemX + itemRange + 14 > (upper.motion?.baseX ?? upper.x) - (upper.motion?.amplitude || 0) &&
+                itemX - itemRange - 14 < (upper.motion?.baseX ?? upper.x) + (upper.motion?.amplitude || 0) + upper.width);
+            if (!overlaps) { placeFood(platform); pendingFood = false; }
+        }
+    }
+    if (!FEATURES.waves || altitude() < 2000) return;
+    if (nextWaveAt === null) nextWaveAt = gameTime + 5;
+    if (bombWave && (gameTime >= bombWave.expiresAt || player.y + player.height < bombWave.y - 14 ||
+        bombWave.y - camera > height + 30)) bombWave = null;
+    if (gameTime < nextWaveAt) return;
+    nextWaveAt = gameTime + 5;
+    const target = platforms[platforms.length - 1];
+    const center = (target.motion?.baseX ?? target.x) + 30;
+    // Springs can carry the player past several boards before the next landing.
+    // Reserve every main-route center crossed below this row, including board motion.
+    const y = target.y - (target.spring ? 20 : 0) + 24;
+    const route = platforms.filter(p => p.extras && p.y >= y - 24 && p.y <= player.y + player.height + 300);
+    const centers = route.map(p => ({ x: (p.motion?.baseX ?? p.x) + 30, range: p.motion?.amplitude || 0 }));
+    centers.push({ x: center, range: target.motion?.amplitude || 0 }, { x: player.x + player.width / 2, range: 0 });
+    const left = Math.min(...centers.map(p => p.x - p.range)) - 36;
+    const right = Math.max(...centers.map(p => p.x + p.range)) + 36;
+    const gapWidth = Math.min(width, Math.max(100, right - left));
+    const gapLeft = Math.max(0, Math.min(width - gapWidth, left));
+    const bombs = [];
+    for (let x = 0; x <= width; x += 24) {
+        if (x + 12 > gapLeft && x - 12 < gapLeft + gapWidth) continue;
+        bombs.push({ x, y, radius: 12, destroyed: false });
+    }
+    bombWave = { y, gapLeft, gapWidth, bombs, warningUntil: gameTime + 1.2, expiresAt: gameTime + 5 };
+    // One wave replaces ordinary dangers, rather than adding another layer of density.
+    for (const platform of platforms) delete platform.hazard;
+}
+
 function step(dt) {
     if (gameOver || result.open || profile.open || document.hidden) return;
     gameTime += dt;
+    updatePressure(dt);
     let dashing = player.dashRemaining > 1e-9;
     for (const field of effectTimers)
         player[field] = Math.max(0, (player[field] || 0) - dt);
     pickupEffects = pickupEffects.filter(effect => effect.life > 0);
     for (const effect of pickupEffects) { effect.life -= dt; effect.y -= 24 * dt; }
     for (const platform of platforms) {
-        if (score() >= 5000) platform.fragile = true;
-        if (platform.motion && score() >= 2000) {
+        if (altitude() >= 5000) platform.fragile = true;
+        if (platform.motion && altitude() >= 2000) {
             const motion = platform.motion;
             motion.phase += movingSpeed() / motion.amplitude * dt;
             platform.x = motion.baseX + Math.sin(motion.phase) * motion.amplitude;
@@ -537,8 +624,19 @@ function step(dt) {
             collectItem(item);
         }
     }
+    if (bombWave && gameTime >= bombWave.warningUntil) {
+        for (const bomb of bombWave.bombs) {
+            if (bomb.destroyed || !touchesCircle(bomb)) continue;
+            if (dashing && player.dashBombs < 1) {
+                bomb.destroyed = true;
+                player.dashBombs++;
+                award(15, bomb.x, bomb.y);
+            } else if (absorbHit()) bomb.destroyed = true;
+            else { finish(); return; }
+        }
+    }
     highest = Math.min(highest, player.y);
-    if (score() >= 5000) for (const platform of platforms) platform.fragile = true;
+    if (altitude() >= 5000) for (const platform of platforms) platform.fragile = true;
     // World coordinates stay fixed; only the camera follows new heights.
     camera = Math.min(camera, player.y - height * 0.4);
     platforms = platforms.filter(platform => platform.y - camera < height + 30);
@@ -547,6 +645,7 @@ function step(dt) {
         const next = nextPlatform(previous);
         platforms.push(...next.extras, next);
     }
+    if (satiety === 0) { finish("饱食度耗尽"); return; }
     if (player.y - camera > height && !absorbHit(true)) finish();
 }
 
@@ -639,6 +738,12 @@ function draw() {
                 item.x - 14, item.y - camera - 14, 28, 28);
         }
     }
+    if (bombWave) {
+        const y = bombWave.y - camera;
+        for (const bomb of bombWave.bombs) {
+            if (!bomb.destroyed) context.drawImage(bombImage, bomb.x - 12, y - 12, 24, 24);
+        }
+    }
     if (player.dashRemaining > 0) {
         const originalY = player.y;
         for (let i = 3; i > 0; i--) {
@@ -674,7 +779,13 @@ function draw() {
     }
     context.globalAlpha = 1;
     currentScore.textContent = score();
+    document.getElementById("current-height").textContent = altitude() + " m";
     bestScore.textContent = Math.max(score(), records[0]?.score || 0);
+    const satietyStatus = document.getElementById("satiety-status");
+    satietyStatus.hidden = satiety === null;
+    satietyStatus.classList.toggle("low", satiety !== null && satiety <= 4);
+    document.getElementById("satiety-meter").value = satiety ?? 15;
+    document.getElementById("satiety-time").textContent = satiety === null ? "" : Math.ceil(satiety) + "s";
     const states = [];
     if (player.shield) states.push("护盾 ♥");
     if (player.glideRemaining > 0) states.push("滑翔 " + player.glideRemaining.toFixed(1) + "s");

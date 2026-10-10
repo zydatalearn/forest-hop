@@ -181,12 +181,14 @@ vm.runInContext(`
         const target = nextPlatform(source);
         check(!target.item || ["pinecone", "diamond"].includes(target.item.kind), "Early functional pickup");
     }
-    setup(); bonusScore = 4974; // Height contributes 25 points: total 4999.
+    setup(); highest = 458 - 4999 * 10;
     const solidBoard = platforms[0];
     step(1 / 120);
     check(!solidBoard.fragile, "All-fragile threshold must not start before 5000");
     collectItem({kind:"pinecone", x:163, y:223});
     step(1 / 120);
+    check(!solidBoard.fragile, "Pickup score must not advance height difficulty");
+    highest = 458 - 5000 * 10; step(1 / 120);
     check(platforms.every(board => board.fragile), "Existing boards must become fragile at 5000");
     for (const spring of [false, true]) {
         const highBoard = makePlatform(400,140,spring);

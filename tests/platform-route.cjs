@@ -33,13 +33,16 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8"),
 const checked = vm.runInContext(`
     // Preserve the original physics and scoring contract with optional expansions disabled.
     if (${!process.argv.includes("--expanded")}) for (const kind of Object.keys(FEATURES)) FEATURES[kind] = false;
+    // Timed pressure has its own continuous-run tests; this harness reconstructs each jump.
+    FEATURES.waves = false;
+    FEATURES.satiety = false;
     let checked = 0, mandatory = 0, hazards = 0, moving = 0, bombs = 0;
     for (let route = 0; route < 100; route++) {
         bonusScore = 0;
         highest = 458;
         let source = makePlatform(526, 150);
         for (let index = 0; index < 600; index++) {
-            const allFragile = score() >= 5000;
+            const allFragile = altitude() >= 5000;
             const target = nextPlatform(source);
             if (allFragile && (!target.fragile || target.extras.some(board => !board.fragile)))
                 throw new Error("Solid platform after 5000 points");
@@ -111,6 +114,7 @@ const checked = vm.runInContext(`
     }
     bonusScore = 0;
     FEATURES.chains = false;
+    highest = 200;
     player = { x: 140, y: 200, width: 46, height: 46, vy: 0, facing: 1, jumpTime: 0 };
     platforms = [makePlatform(300, 140), makePlatform(-10000, 140)];
     platforms[0].item = { kind: "diamond", x: 163, y: 223, radius: 10, collected: false };

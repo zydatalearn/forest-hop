@@ -32,8 +32,8 @@ button {
 .skill-bar { height: 28px; padding: 5px 6px; background: #684b30; color: #fff3c3; font-size: 10px; display: flex; justify-content: space-between; gap: 4px; }
 .skill-bar[hidden] { display: none; }
 .skill-controls { position: absolute; right: 4%; bottom: 23%; display: flex; flex-direction: column; gap: 6px; }
-.item-button { position: relative; width: 44px; min-height: 44px; padding: 4px; border: 1px solid #fff3c366; border-radius: 50%; background: #fff3d64d; color: #51351e; font-size: 10px; }
-.item-button img { display: block; width: 28px; height: 28px; margin: auto; object-fit: contain; }
+.item-button { position: relative; width: 44px; min-height: 44px; padding: 1px; border: 1px solid #fff3c366; border-radius: 50%; background: #fff3d64d; color: #51351e; font-size: 10px; }
+.item-button img { display: block; width: 40px; height: 40px; margin: auto; object-fit: contain; }
 .item-button span { position: absolute; right: 0; bottom: 0; min-width: 16px; border-radius: 8px; background: #fff3d6cc; font-weight: bold; }
 .item-button:disabled { opacity: .45; cursor: default; }
 .mode-choice { display: block; margin: 0 0 16px; font-size: 12px; text-align: left; }
@@ -53,6 +53,11 @@ p { position: absolute; bottom: 1%; width: 100%; text-align: center; color: #4a3
 .hud small { display: block; margin-top: 1px; color: #f2dda9; font-size: 10px; }
 .score-panel { min-width: 0; text-align: right; pointer-events: none; font-size: 10px; white-space: nowrap; }
 .score-panel strong { color: #ffe18a; font-size: 21px; margin-left: 3px; font-variant-numeric: tabular-nums; }
+#satiety-status { display: flex; justify-content: flex-end; align-items: center; gap: 3px; font-size: 9px; }
+#satiety-status[hidden] { display: none; }
+#satiety-meter { width: 48px; height: 6px; accent-color: #e7bd54; }
+#satiety-status.low { color: #ffaaa0; }
+#satiety-status.low progress { accent-color: #e56e50; }
 .ranking-button { font-size: 12px; }
 #profile-summary { margin-bottom: 20px; padding: 12px; background: #e5c99580; border-radius: 14px; }
 #profile-form label { display: block; text-align: left; margin-bottom: 8px; font-size: 14px; }
