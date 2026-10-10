@@ -76,7 +76,7 @@ vm.runInContext(`
     check(!document.getElementById("skill-dash").disabled && !document.getElementById("skill-dash").hidden && document.getElementById("skill-dash").span.textContent === "1", "HUD charges");
     check(document.getElementById("skill-feather").hidden, "Unowned skill should not obstruct view");
     player.shield = true; player.glideRemaining = 1; draw();
-    check(skillStatus.textContent.includes("护盾") && skillStatus.textContent.includes("滑翔"), "HUD active effects");
+    check(player.shield && player.glideRemaining === 1, "Removing status bar preserves active effects");
     player.shield = false; player.invulnerable = 1; context.strokeStyle = "shield-consumed"; draw();
     check(context.strokeStyle === "shield-consumed", "Invulnerability must not redraw the shield ring");
     setup();

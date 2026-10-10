@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.3.0";
+const gameVersion = "1.4.0";
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -39,7 +39,6 @@ const itemNames = { dash: "冲刺", shield: "护心果", glide: "滑翔", magnet
 const effectTimers = ["dashRemaining", "dashCooldown", "invulnerable", "glideRemaining", "magnetRemaining", "slowRemaining"];
 let hardMode = false, gameTime = 0, combo = 0, collectionChain = null;
 let bombWaves = [], bombWave = null, nextWaveAt = null, satiety = null, deathReason = "";
-const skillStatus = document.getElementById("skill-status");
 const keys = new Set();
 const pointers = new Map();
 let player, platforms, camera, highest, gameOver, lastTime;
@@ -61,6 +60,11 @@ try {
     if (savedName) { nickname = savedName; hasNickname = true; }
 } catch {}
 document.getElementById("player-name").textContent = nickname;
+let bestHeight = 0, startHeight = 0;
+try {
+    bestHeight = Math.max(0, Number(localStorage.getItem("forest-hop-height")) || 0);
+    startHeight = bestHeight >= 5000 && localStorage.getItem("forest-hop-start") === "2000" ? 2000 : 0;
+} catch {}
 let records = [];
 try {
     const saved = JSON.parse(localStorage.getItem("forest-hop-scores") || "[]");
@@ -207,6 +211,8 @@ function showResult(ended) {
 
 function finish(reason = "") {
     gameOver = true;
+    bestHeight = Math.max(bestHeight, altitude());
+    try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
     deathReason = reason;
     completedRun = Object.freeze({ name: nickname, score: score() });
     records.push(completedRun);
@@ -218,14 +224,14 @@ function finish(reason = "") {
 }
 
 function makePlatform(y, x, spring = false, fragile = false) {
-    return { x, y, width: 60, height: 18, spring, fragile: fragile || altitude() >= 5000, broken: false, compressedUntil: 0, requiredSpring: false };
+    return { x, y, width: altitude() >= 6000 ? 30 : 60, height: 18, spring, fragile: fragile || altitude() >= 5000, broken: false, compressedUntil: 0, requiredSpring: false };
 }
 
 function placeFood(platform) {
     platform.foodGuaranteed = true;
     platform.foodChecked = true;
     platform.item = { kind: platform.item?.kind === "diamond" ? "diamond" : "pinecone",
-        x: platform.x + 30, y: platform.y - (platform.spring ? 38 : 18), radius: 10, collected: false };
+        x: platform.x + platform.width / 2, y: platform.y - (platform.spring ? 38 : 18), radius: 10, collected: false };
 }
 
 function platformPhase(platform) {
@@ -263,11 +269,12 @@ function nextPlatform(previous) {
     const moving = altitude() >= 2000 && !previous.motion && !previous.spring &&
         !spring && !springGap && Math.random() < 0.3;
     const amplitude = moving ? 18 : 0;
-    const sourceX = previous.motion ? previous.motion.baseX : previous.x;
+    const boardWidth = altitude() >= 6000 ? 30 : 60;
+    const sourceX = (previous.motion ? previous.motion.baseX : previous.x) + (previous.width - boardWidth) / 2;
     // Reserve the full motion range at both ends, so every phase still has a reachable jump.
     const maxShift = Math.max(0, Math.min(65 + difficulty * 35, landingTime * 240 * 0.55) -
         amplitude - (previous.motion?.amplitude || 0));
-    const x = Math.max(amplitude, Math.min(width - 60 - amplitude, sourceX + (Math.random() * 2 - 1) * maxShift));
+    const x = Math.max(amplitude, Math.min(width - boardWidth - amplitude, sourceX + (Math.random() * 2 - 1) * maxShift));
     if (springGap) {
         previous.requiredSpring = true;
         previous.fragile = altitude() >= 5000;
@@ -281,7 +288,7 @@ function nextPlatform(previous) {
         platform.x = x + Math.sin(platform.motion.phase) * amplitude;
     }
     if (Math.random() < 0.26) platform.item = { kind: Math.random() < 0.25 ? "diamond" : "pinecone",
-        x: platform.x + 30, y: platform.y - (spring ? 38 : 18), radius: 10, collected: false };
+        x: platform.x + platform.width / 2, y: platform.y - (spring ? 38 : 18), radius: 10, collected: false };
     if (platform.item && routeScore >= 40) {
         const roll = Math.random();
         const kind = roll < 0.62 ? platform.item.kind : roll < 0.80 ? "shield" :
@@ -297,18 +304,18 @@ function nextPlatform(previous) {
     // Extra boards offer choices; the main route remains clear at every motion phase.
     platform.extras = [];
     const candidates = [];
-    for (let extraX = 0; extraX <= width - 60; extraX += 15) {
+    for (let extraX = 0; extraX <= width - boardWidth; extraX += 15) {
         if (Math.abs(extraX - x) >= 90 + amplitude) candidates.push(extraX);
     }
     const count = Math.floor(Math.random() * 2);
     for (let i = 0; i < count && candidates.length; i++) {
         const extraX = candidates[Math.floor(Math.random() * candidates.length)];
         const extra = makePlatform(platform.y, extraX);
-        const center = extraX + 30;
+        const center = extraX + extra.width / 2;
         const left = Math.min(sourceX - (previous.motion?.amplitude || 0), x - amplitude) - 35;
         const right = Math.max(sourceX + (previous.motion?.amplitude || 0), x + amplitude) + 95;
         // Also reserve room for the next outgoing jump from this safe board.
-        const outsideExit = Math.abs(center - (x + 30)) > 145 + amplitude;
+        const outsideExit = Math.abs(center - (x + boardWidth / 2)) > 145 + amplitude;
         const normalBombs = platforms?.reduce((count, board) => count + Number(board.hazard?.kind === "bomb"), 0) || 0;
         const bombLimit = altitude() >= 2000 ? 1 : 4;
         if ((routeScore >= 180 || (FEATURES.pressure && altitude() >= 1000)) &&
@@ -331,7 +338,7 @@ function nextPlatform(previous) {
     if (previous.item) {
         const item = previous.item;
         const itemRange = previous.motion?.amplitude || 0;
-        const itemX = (previous.motion?.baseX ?? previous.x) + 30;
+        const itemX = (previous.motion?.baseX ?? previous.x) + previous.width / 2;
         for (const board of [...platform.extras, platform]) {
             const boardRange = board.motion?.amplitude || 0;
             const boardX = board.motion?.baseX ?? board.x;
@@ -353,7 +360,7 @@ function restart() {
     uploaded = false;
     if (result.open) result.close();
     for (const id of ["left", "right"]) document.getElementById(id).classList.remove("pressed");
-    player = { x: 157, y: 458, width: 46, height: 46, vy: jumpSpeed, facing: 1, jumpTime: 0 };
+    player = { x: 157, y: 458 - startHeight * 10, width: 46, height: 46, vy: jumpSpeed, facing: 1, jumpTime: 0 };
     Object.assign(player, { dashCharges: 0, dashRemaining: 0, dashCooldown: 0, dashBombs: 0,
         shield: false, invulnerable: 0, glideRemaining: 0, magnetRemaining: 0, featherCharges: 0,
         featherUsed: false, bootsCharges: 0, bootsArmed: false, slowRemaining: 0 });
@@ -367,14 +374,15 @@ function restart() {
     deathReason = "";
     bonusScore = 0;
     highest = player.y;
-    platforms = [makePlatform(526, 150, false)];
+    platforms = [makePlatform(526 - startHeight * 10, 150, false)];
+    platforms[0].campStart = startHeight > 0;
     for (let i = 1; i < 10; i++) {
         const next = nextPlatform(platforms[platforms.length - 1]);
         platforms.push(...next.extras, next);
     }
     fragments = [];
     pickupEffects = [];
-    camera = 0;
+    camera = -startHeight * 10;
     gameOver = false;
     keys.clear();
     pointers.clear();
@@ -463,7 +471,7 @@ function absorbHit(falling = false) {
         const y = target.y + 50;
         const x = target.x;
         platforms.unshift(makePlatform(y, x));
-        player.x = x + 7;
+        player.x = x + platforms[0].width / 2 - player.width / 2;
         player.y = y - player.height;
         player.vy = jumpSpeed;
         player.jumpTime = 0;
@@ -484,7 +492,7 @@ function updatePressure(dt) {
             if (platform.routeIndex % 3 === 0) pendingFood = true;
             if (!pendingFood || platform.item?.collected) continue;
             const itemY = platform.y - (platform.spring ? 38 : 18);
-            const itemX = (platform.motion?.baseX ?? platform.x) + 30;
+            const itemX = (platform.motion?.baseX ?? platform.x) + platform.width / 2;
             const itemRange = platform.motion?.amplitude || 0;
             const overlaps = platforms.some(upper => upper.y < platform.y &&
                 itemY + 14 > upper.y && itemY - 14 < upper.y + upper.height &&
@@ -494,13 +502,13 @@ function updatePressure(dt) {
         }
     }
     if (!FEATURES.waves || altitude() < 2000) return;
-    if (nextWaveAt === null) nextWaveAt = gameTime + 5;
+    if (nextWaveAt === null) nextWaveAt = Math.max(gameTime, startHeight > 0 ? 3 : 0) + 5;
     bombWaves = bombWaves.filter(wave => wave.y - camera <= height + 30);
     bombWave = bombWaves[bombWaves.length - 1] || null;
     if (gameTime < nextWaveAt) return;
     nextWaveAt = gameTime + 5;
     const target = platforms[platforms.length - 1];
-    const center = (target.motion?.baseX ?? target.x) + 30;
+    const center = (target.motion?.baseX ?? target.x) + target.width / 2;
     const y = target.y - (target.spring ? 20 : 0) + 24;
     // Four missing 24px bomb slots leave about two 46px player widths.
     const gapWidth = 96;
@@ -527,11 +535,16 @@ function step(dt) {
     for (const effect of pickupEffects) { effect.life -= dt; effect.y -= 24 * dt; }
     for (const platform of platforms) {
         if (altitude() >= 5000) platform.fragile = true;
+        if (altitude() >= 6000 && platform.width === 60) {
+            platform.width = 30; platform.x += 15;
+            if (platform.motion) platform.motion.baseX += 15;
+        }
+        if (platform.campStart && gameTime < 3) platform.fragile = false;
         if (platform.motion && altitude() >= 2000) {
             const motion = platform.motion;
             motion.phase += movingSpeed() / motion.amplitude * dt;
             platform.x = motion.baseX + Math.sin(motion.phase) * motion.amplitude;
-            if (platform.item && !platform.item.attracted) platform.item.x = platform.x + 30;
+            if (platform.item && !platform.item.attracted) platform.item.x = platform.x + platform.width / 2;
         }
     }
     fragments = fragments.filter(piece => piece.life > 0);
@@ -570,8 +583,8 @@ function step(dt) {
             if (platform.broken || platformPhase(platform) >= 3) continue;
             const overlaps = player.x + player.width > platform.x &&
                 player.x < platform.x + platform.width;
-            const hitsSpring = platform.spring && player.x + player.width > platform.x + 17 &&
-                player.x < platform.x + 43;
+            const hitsSpring = platform.spring && player.x + player.width > platform.x + platform.width / 2 - 13 &&
+                player.x < platform.x + platform.width / 2 + 13;
             const bottom = player.y + player.height;
             const crossesSpring = hitsSpring && previousBottom <= platform.y - 20 &&
                 bottom >= platform.y - 20;
@@ -590,8 +603,8 @@ function step(dt) {
                 if (platform.fragile) {
                     platform.broken = true;
                     for (const side of [-1, 1]) {
-                        fragments.push({ x: platform.x + (side === 1 ? 30 : 0), y: platform.y,
-                            vx: side * 55, vy: -50, life: 0.4, sourceX: side === 1 ? 120 : 0 });
+                        fragments.push({ x: platform.x + (side === 1 ? platform.width / 2 : 0), y: platform.y,
+                            vx: side * 55, vy: -50, life: 0.4, width: platform.width / 2, sourceX: side === 1 ? 120 : 0 });
                     }
                 }
                 if (hitsSpring) platform.compressedUntil = performance.now() + 160;
@@ -649,6 +662,10 @@ function step(dt) {
         }
     }
     highest = Math.min(highest, player.y);
+    if (bestHeight < 5000 && altitude() >= 5000) {
+        bestHeight = altitude();
+        try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
+    }
     if (altitude() >= 5000) for (const platform of platforms) platform.fragile = true;
     // World coordinates stay fixed; only the camera follows new heights.
     camera = Math.min(camera, player.y - height * 0.4);
@@ -705,13 +722,13 @@ function draw() {
             context.strokeStyle = "#80d4d0";
             context.lineWidth = 2;
             context.beginPath();
-            context.moveTo(platform.x + 12, y + 13);
-            context.lineTo(platform.x + 48, y + 13);
+            context.moveTo(platform.x + platform.width * .2, y + 13);
+            context.lineTo(platform.x + platform.width * .8, y + 13);
             context.stroke();
         }
         if (platform.mossy) {
             context.fillStyle = "#538346";
-            context.fillRect(platform.x + 3, y, 54, 4);
+            context.fillRect(platform.x + 3, y, platform.width - 6, 4);
         }
         if (platform.wind) {
             context.fillStyle = "#487e9980";
@@ -720,7 +737,7 @@ function draw() {
         }
         if (platform.spring && springImage.complete && springImage.naturalWidth) {
             const springHeight = performance.now() < platform.compressedUntil ? 12 : 20;
-            context.drawImage(springImage, platform.x + 19, y + 3 - springHeight, 22, springHeight);
+            context.drawImage(springImage, platform.x + platform.width / 2 - 11, y + 3 - springHeight, 22, springHeight);
         }
     }
     context.globalAlpha = 1;
@@ -728,7 +745,7 @@ function draw() {
         for (const piece of fragments) {
             context.globalAlpha = Math.max(0, piece.life / 0.4);
             context.drawImage(brokenImage, piece.sourceX, 0, 120, 72,
-                piece.x, piece.y - camera, 30, 18);
+                piece.x, piece.y - camera, piece.width, 18);
         }
         context.globalAlpha = 1;
     }
@@ -802,13 +819,6 @@ function draw() {
     satietyStatus.classList.toggle("low", satiety !== null && satiety <= 4);
     document.getElementById("satiety-meter").value = satiety ?? 15;
     document.getElementById("satiety-time").textContent = satiety === null ? "" : Math.ceil(satiety) + "s";
-    const states = [];
-    if (player.shield) states.push("护盾 ♥");
-    if (player.glideRemaining > 0) states.push("滑翔 " + player.glideRemaining.toFixed(1) + "s");
-    if (player.magnetRemaining > 0) states.push("磁石 " + player.magnetRemaining.toFixed(1) + "s");
-    if (combo >= 5) states.push("连击 ×" + Math.min(2, 1 + Math.floor(combo / 5) * 0.1).toFixed(1));
-    skillStatus.textContent = states.join(" · ");
-    skillStatus.parentElement.hidden = !states.length && !player.bootsArmed;
     for (const [kind, charges] of [["dash", player.dashCharges], ["feather", player.featherCharges], ["spring-boots", player.bootsCharges]]) {
         const button = document.getElementById("skill-" + kind);
         button.hidden = !charges && !(kind === "spring-boots" && player.bootsArmed) && !(kind === "dash" && player.dashRemaining > 0);
@@ -816,7 +826,6 @@ function draw() {
             (kind === "feather" && player.featherUsed) || (kind === "spring-boots" && player.bootsArmed);
         button.querySelector("span").textContent = kind === "spring-boots" && player.bootsArmed ? "✓" : String(charges || 0);
     }
-    document.getElementById("boots-status").textContent = player.bootsArmed ? "下一跳弹簧靴" : "";
 }
 
 function frame(time) {
@@ -841,7 +850,7 @@ function steer(event) {
     document.getElementById("right").classList.toggle("pressed", direction === 1);
 }
 playfield.addEventListener("pointerdown", event => {
-    if (!assetsReady || gameOver || result.open || profile.open || event.target.closest(".hud, .skill-bar, .skill-controls, .item-button, #ranking, dialog")) return;
+    if (!assetsReady || gameOver || result.open || profile.open || event.target.closest(".hud, .skill-controls, .item-button, #ranking, dialog")) return;
     event.preventDefault();
     playfield.setPointerCapture(event.pointerId);
     steer(event);
@@ -868,6 +877,12 @@ for (const kind of ["dash", "feather", "spring-boots"]) {
         if (event.detail === 0) useSkill(kind);
     });
 }
+document.getElementById("start-height").addEventListener("change", event => {
+    startHeight = bestHeight >= 5000 && event.target.value === "2000" ? 2000 : 0;
+    try { localStorage.setItem("forest-hop-start", String(startHeight)); } catch {}
+    restart();
+});
+
 document.getElementById("hard-mode").addEventListener("change", event => {
     hardMode = event.target.checked;
     restart();
@@ -898,8 +913,12 @@ function showProfile() {
     document.getElementById("nickname").disabled = hasNickname;
     document.getElementById("save-nickname").hidden = hasNickname;
     document.getElementById("close-profile").hidden = !hasNickname;
-    document.getElementById("profile-summary").textContent = "最高分 " + (records[0]?.score || 0) + " · 已保存 " + records.length + " 条成绩";
-    document.getElementById("profile-message").textContent = hasNickname ? "名称已锁定，无法修改" : "名称确认后无法修改，请慎重填写";
+    document.getElementById("camp-option").disabled = bestHeight < 5000;
+    document.getElementById("start-height").value = String(startHeight);
+    document.getElementById("camp-option").textContent = bestHeight >= 5000 ? "2000 m 营地" : "2000 m 营地（最高达到 5000 m 解锁）";
+    document.getElementById("profile-best-score").textContent = records[0]?.score || 0;
+    document.getElementById("profile-best-height").textContent = Math.max(bestHeight, altitude()) + " m";
+    document.getElementById("profile-message").textContent = hasNickname ? "昵称已锁定" : "名称确认后无法修改，请慎重填写";
     profile.showModal();
 }
 document.getElementById("profile-button").addEventListener("click", showProfile);

@@ -29,8 +29,6 @@ button {
     color: #795c31; text-shadow: 0 1px #fff5d4;
 }
 .controls button.pressed, .controls button:active { background: rgba(255, 230, 156, .65); }
-.skill-bar { height: 28px; padding: 5px 6px; background: #684b30; color: #fff3c3; font-size: 10px; display: flex; justify-content: space-between; gap: 4px; }
-.skill-bar[hidden] { display: none; }
 .skill-controls { position: absolute; right: 4%; bottom: 23%; display: flex; flex-direction: column; gap: 6px; }
 .item-button { position: relative; width: 44px; min-height: 44px; padding: 1px; border: 1px solid #fff3c366; border-radius: 50%; background: #fff3d64d; color: #51351e; font-size: 10px; }
 .item-button img { display: block; width: 40px; height: 40px; margin: auto; object-fit: contain; }
@@ -59,7 +57,9 @@ p { position: absolute; bottom: 1%; width: 100%; text-align: center; color: #4a3
 #satiety-status.low { color: #ffaaa0; }
 #satiety-status.low progress { accent-color: #e56e50; }
 .ranking-button { font-size: 12px; }
-#profile-summary { margin-bottom: 20px; padding: 12px; background: #e5c99580; border-radius: 14px; }
+#profile-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+#profile-summary > div { padding: 12px 6px; background: #e5c99580; border-radius: 12px; }
+#profile-summary strong { display: block; margin-top: 4px; font-size: 23px; font-variant-numeric: tabular-nums; }
 #profile-form label { display: block; text-align: left; margin-bottom: 8px; font-size: 14px; }
 #nickname { width: 100%; min-height: 46px; padding: 10px; border: 1px solid #9b783f; border-radius: 10px; background: #fffaf0; color: #51351e; font: inherit; user-select: text; touch-action: auto; }
 #profile-message { min-height: 24px; font-size: 13px; color: #425529; }
@@ -110,3 +110,16 @@ dialog small { color: #8b724c; font-size: 11px; }
 .ranking-tabs button[aria-pressed="true"] { color: #fff8dc; background: #79502a; }
 #ranking-status:empty, #ranking-self:empty { display: none; }
 #ranking-self { padding: 7px 8px; margin: 6px 0; border-radius: 8px; background: #e5c99580; }
+
+#start-height { display: block; width: 100%; margin-top: 6px; padding: 8px; border: 1px solid #9b783f; border-radius: 8px; background: #fffaf0; color: #51351e; font: inherit; }
+
+#profile { padding: 20px; border-width: 2px; border-radius: 20px; }
+#profile h1 { margin: 6px 0 16px; font-size: 24px; }
+#profile .mode-choice { margin-bottom: 14px; }
+.difficulty-choice { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; background: #e5c99550; }
+.difficulty-choice input { width: 18px; height: 18px; margin: 0; accent-color: #98632f; }
+.difficulty-choice small { display: block; margin-top: 3px; }
+#profile #open-item-help { width: 100%; min-height: 38px; margin-bottom: 16px; border: 1px solid #bfa56b; border-radius: 10px; background: transparent; color: #79502a; font-size: 13px; }
+#profile .modal-actions { margin: 12px 0 6px; }
+#profile-message { min-height: 18px; margin-top: 6px; font-size: 11px; }
+.profile-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }

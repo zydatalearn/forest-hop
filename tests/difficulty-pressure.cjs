@@ -83,7 +83,7 @@ vm.runInContext(`
         for (let tick = 0; tick < 120 * 60 && !gameOver; tick++) {
             if (!target) target = platforms.filter(p => p.extras && !p.broken && p.y < source.y).sort((a,b) => b.y-a.y)[0];
             check(target, "Continuous route needs next board");
-            keys.clear(); const delta = target.x + 7 - player.x;
+            keys.clear(); const delta = target.x + target.width / 2 - 23 - player.x;
             if (Math.abs(delta) > 1) keys.add(delta > 0 ? "ArrowRight" : "ArrowLeft");
             for (const p of platforms) delete p.hazard; // Isolate route and hunger from optional bomb detours.
             const vy = player.vy, beforePlatforms = platforms.slice(); step(1/120);
@@ -153,3 +153,25 @@ vm.runInContext(`
     restart(); check(bombWaves.length===0, "Restart clears every row");
 `, sandbox);
 console.log("Passed: two-body gap, dense bomb row, persistence after crossing/new wave, offscreen cleanup and restart.");
+
+vm.runInContext(`
+    FEATURES.waves = true;
+    startHeight = 0; restart(); highest = 458 - 5999 * 10;
+    check(makePlatform(300,100).width === 60, "Full width below 6000");
+    const old = makePlatform(400,100); old.motion = {baseX:100,amplitude:18,phase:0};
+    old.item = {kind:"pinecone",x:130,y:382,collected:false};
+    platforms=[old,makePlatform(-10000,140)]; highest=458-6000*10;
+    player.y=200; camera=0; step(1/120);
+    check(old.width===30 && old.motion.baseX===115 && old.item.x===old.x+15, "Narrowing preserves center and item/motion alignment");
+    check(makePlatform(300,100,true).width===30, "Generated spring boards shrink");
+    bestHeight=4999;
+    const change=document.getElementById("start-height").listeners.get("change");
+    change({target:{value:"2000"}}); check(startHeight===0 && altitude()===0, "Locked camp rejects selection");
+    bestHeight=5000; change({target:{value:"2000"}});
+    check(startHeight===2000 && altitude()===2000 && score()===2000 && bonusScore===0, "Camp starts at height-derived score without guessed pickups");
+    check(camera===-20000 && platforms[0].y===526-20000 && !platforms[0].fragile, "Camp world and stable starting board");
+    updatePressure(0); check(nextWaveAt===8 && !bombWave, "Camp grants three-second grace before wave schedule");
+    restart(); check(altitude()===2000, "Restart retains selected camp");
+    change({target:{value:"0"}}); check(altitude()===0 && score()===0, "Zero start remains available");
+`, sandbox);
+console.log("Passed: 6000m width boundary/alignment, camp unlock, height score, world positioning, grace and restart.");

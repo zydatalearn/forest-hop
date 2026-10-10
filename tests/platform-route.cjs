@@ -47,7 +47,7 @@ const checked = vm.runInContext(`
             if (allFragile && (!target.fragile || target.extras.some(board => !board.fragile)))
                 throw new Error("Solid platform after 5000 points");
             if (target.extras.length > 1) throw new Error("Too many extra boards");
-            if (target.item && (target.item.x !== target.x + 30 ||
+            if (target.item && (target.item.x !== target.x + target.width / 2 ||
                 target.item.y !== target.y - (target.spring ? 38 : 18)))
                 throw new Error("Pickup must sit above its own board");
             if (source.item) {
@@ -62,7 +62,7 @@ const checked = vm.runInContext(`
                 if (extra.y !== target.y) throw new Error("Extra board on wrong height");
                 if (extra.hazard) {
                     hazards++; bombs++;
-                    if (extra.hazard.kind !== "bomb" || extra.hazard.x !== extra.x + 30 || extra.hazard.y !== extra.y - 19)
+                    if (extra.hazard.kind !== "bomb" || extra.hazard.x !== extra.x + extra.width / 2 || extra.hazard.y !== extra.y - 19)
                         throw new Error("Hazard must be a bomb on a board");
                 }
             }
@@ -82,7 +82,7 @@ const checked = vm.runInContext(`
             if (!allFragile && source.fragile && target.fragile) throw new Error("Consecutive fragile platforms");
             // Run the actual collision/physics code at 120Hz, aiming for the next center.
             const sourceBottom = source.y - (source.spring ? 20 : 0);
-            player = { x: source.x + 7, y: sourceBottom - 46, width: 46, height: 46,
+            player = { x: source.x + source.width / 2 - 23, y: sourceBottom - 46, width: 46, height: 46,
                 vy: source.spring ? springSpeed : jumpSpeed, facing: 1, jumpTime: 0 };
             platforms = [...(source.extras || []), source, ...target.extras, target, makePlatform(target.y - 10000, target.x)];
             camera = player.y - height * 0.4;
@@ -93,7 +93,7 @@ const checked = vm.runInContext(`
             uploadConfirm.open = false;
             for (let tick = 0; tick < 200; tick++) {
                 keys.clear();
-                const delta = target.x + 7 - player.x;
+                const delta = target.x + target.width / 2 - 23 - player.x;
                 if (Math.abs(delta) > 1) keys.add(delta > 0 ? "ArrowRight" : "ArrowLeft");
                 const oldVelocity = player.vy;
                 step(1 / 120);
