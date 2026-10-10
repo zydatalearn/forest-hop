@@ -34,6 +34,18 @@
 本机前 10 名保存在当前浏览器 localStorage，游戏结束时记录一次。排行榜打开时暂停游戏；不同设备之间不共享成绩。
 每条成绩保存当时的昵称。旧版仅有分数的记录使用升级时的昵称显示。
 首次进入需先设置昵称，确认后在当前浏览器锁定，清除浏览器数据会重置。
-游戏结束后询问是否上传，选择“是”前往 GitHub 登录并发布预填的 Issue；选择“否”仅保留本机记录。
+游戏结束后询问是否上传，选择“是”通过 Cloudflare Worker 提交到 GitHub Issues，无需玩家登录；选择“否”仅保留本机记录，可随后点击上传按钮。
 联机排行读取本仓库标题为 `[Forest Hop Score]` 的公开、未关闭 Issue，按名称保留最高分，同名玩家会合并。
-游戏内不提供分数编辑；GitHub Issue 内容仍可被提交人修改，因此联机成绩未经验证。关闭作弊或无效成绩的 Issue 可将其移出联机排行。
+游戏内不提供分数编辑，但客户端提交不能防止作弊，联机成绩未经验证。关闭作弊或无效成绩的 Issue 可将其移出联机排行。
+GitHub Token 仅保存到 Worker 的 GITHUB_TOKEN Secret，不放进网页或仓库。网页 src/github-config.js 只保存公开的 Worker 地址。
+
+## Cloudflare 上传服务
+1. 在 worker 目录运行 `npx wrangler login`，然后 `npx wrangler deploy`。
+2. 运行 `npx wrangler secret put GITHUB_TOKEN`，按提示输入仅授权本仓库 Issues 读写的 Token。
+3. 将部署输出的 HTTPS 地址填入 src/github-config.js 的 FOREST_HOP_API_URL。
+4. 将游戏部署到 GitHub Pages；worker/wrangler.jsonc 的 ALLOWED_ORIGIN 必须和网页来源一致（不含路径）。
+
+接口检查名称和非负整数分数，每个 IP 在同一 Cloudflare 节点每分钟最多提交 5 次，同一网络的玩家共用这个额度。
+直接打开本地 HTML 的来源不被允许上传；本机成绩仍可正常保存。来源检查和频率限制不能代替防作弊或保证名称唯一。
+运行 `node tests/worker-api.mjs` 和 `node tests/score-upload.cjs` 验证接口和上传流程。
+本地 .dev.vars 文件仅用于开发，已加入 .gitignore；上传 Secret 时不要把 Token 写进命令行或日志。

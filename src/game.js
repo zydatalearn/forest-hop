@@ -25,6 +25,7 @@ const result = document.getElementById("result");
 const profile = document.getElementById("profile");
 const uploadConfirm = document.getElementById("upload-confirm");
 let completedRun;
+let uploading = false;
 const currentScore = document.getElementById("current-score");
 const bestScore = document.getElementById("best-score");
 let nickname = "森林旅人";
@@ -134,12 +135,8 @@ function showResult(ended) {
     showLocalRanking();
     const submit = document.getElementById("submit-score");
     submit.hidden = !gameOver;
-    if (gameOver) {
-        const body = "Forest Hop 玩家提交成绩（未经验证）\n\n```json\n" +
-            JSON.stringify({ game: "forest-hop", name: completedRun.name, score: completedRun.score }, null, 2) + "\n```";
-        submit.href = "https://github.com/zydatalearn/forest-hop/issues/new?title=" +
-            encodeURIComponent("[Forest Hop Score]") + "&body=" + encodeURIComponent(body);
-    }
+    submit.disabled = !!completedRun?.uploaded;
+    submit.textContent = completedRun?.uploaded ? "本次成绩已上传" : "上传本次成绩";
     document.getElementById("close-result").textContent = ended ? "查看场景" : "继续游戏";
     document.getElementById("play-again").hidden = !gameOver;
     if (!result.open) result.showModal();
@@ -153,8 +150,51 @@ function finish() {
     records = records.slice(0, 10);
     try { localStorage.setItem("forest-hop-scores", JSON.stringify(records)); } catch {}
     showResult(true);
+    showUploadConfirm();
+}
+
+function showUploadConfirm() {
+    if (!completedRun || completedRun.uploaded || uploading) return;
     document.getElementById("upload-summary").textContent = completedRun.name + " · " + completedRun.score + " 分";
+    document.getElementById("upload-status").textContent = "";
     uploadConfirm.showModal();
+}
+
+async function uploadScore() {
+    if (!completedRun || completedRun.uploaded || uploading) return;
+    uploading = true;
+    const run = completedRun;
+    const request = new AbortController();
+    const timeout = setTimeout(() => request.abort(), 15000);
+    const yes = document.getElementById("upload-yes");
+    const no = document.getElementById("upload-no");
+    yes.disabled = no.disabled = true;
+    document.getElementById("upload-status").textContent = "正在上传…";
+    try {
+        if (!FOREST_HOP_API_URL) throw new Error("上传服务尚未部署，本机成绩已保留");
+        const response = await fetch(FOREST_HOP_API_URL + "/scores", {
+            method: "POST", signal: request.signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: run.name, score: run.score })
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || "上传失败，请稍后重试");
+        }
+        run.uploaded = true;
+        const submit = document.getElementById("submit-score");
+        submit.disabled = true;
+        submit.textContent = "本次成绩已上传";
+        uploadConfirm.close();
+        await showOnlineRanking();
+    } catch (error) {
+        document.getElementById("upload-status").textContent = request.signal.aborted ?
+            "请求超时，可能已上传，请先查看联机排行再决定是否重试" : error.message;
+    } finally {
+        clearTimeout(timeout);
+        uploading = false;
+        yes.disabled = no.disabled = false;
+    }
 }
 
 
@@ -390,10 +430,9 @@ document.getElementById("ranking").addEventListener("click", () => showResult(fa
 document.getElementById("local-ranking").addEventListener("click", showLocalRanking);
 document.getElementById("online-ranking").addEventListener("click", showOnlineRanking);
 document.getElementById("upload-no").addEventListener("click", () => uploadConfirm.close());
-document.getElementById("upload-yes").addEventListener("click", () => {
-    window.open(document.getElementById("submit-score").href, "_blank", "noopener,noreferrer");
-    uploadConfirm.close();
-});
+document.getElementById("upload-yes").addEventListener("click", uploadScore);
+document.getElementById("submit-score").addEventListener("click", showUploadConfirm);
+uploadConfirm.addEventListener("cancel", event => { if (uploading) event.preventDefault(); });
 document.getElementById("play-again").addEventListener("click", restart);
 document.getElementById("close-result").addEventListener("click", () => result.close());
 result.addEventListener("close", () => { rankingRequest?.abort(); clearControls(); });

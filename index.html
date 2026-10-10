@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>森林跃跃 · Forest Hop</title>
     <link rel="stylesheet" href="src/style.css">
+    <script src="src/github-config.js" defer></script>
     <script src="src/game.js" defer></script>
 </head>
 <body>
@@ -35,7 +36,8 @@
         <dialog id="upload-confirm">
             <h1>是否上传记录？</h1>
             <div id="upload-summary"></div>
-            <p class="upload-note">选“是”后前往 GitHub 登录并确认发布</p>
+            <p class="upload-note">将本次名称和得分上传到公开联机排行榜</p>
+            <div id="upload-status" role="status"></div>
             <div class="modal-actions"><button id="upload-no">否</button><button id="upload-yes">是</button></div>
         </dialog>
         <dialog id="result">
@@ -46,7 +48,7 @@
             <h2 id="ranking-title">本机排行榜 · 前 10 名</h2>
             <div id="ranking-status" role="status"></div>
             <ol id="rank-list"></ol>
-            <a id="submit-score" target="_blank" rel="noopener noreferrer" hidden>提交本次成绩到 GitHub</a>
+            <button id="submit-score" hidden>上传本次成绩</button>
             <div class="modal-actions">
                 <button id="close-result">返回</button>
                 <button id="play-again">再玩一次</button>
