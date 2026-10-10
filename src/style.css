@@ -2,11 +2,11 @@
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { background: #342d20; font-family: sans-serif; display: grid; place-items: center; }
 #playfield {
-    position: relative; width: min(100vw, 62.5dvh); aspect-ratio: 360 / 576;
+    position: relative; width: min(100vw, calc((100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * .625));
     touch-action: none; user-select: none; -webkit-user-select: none;
 }
 #board {
-    display: block; width: 100%; height: 100%;
+    display: block; width: 100%; height: auto; aspect-ratio: 360 / 576;
     background: url("../assets/images/forest-background.webp") center / cover;
 }
 button {
@@ -27,19 +27,18 @@ button {
 .controls button.pressed, .controls button:active { background: rgba(255, 230, 156, .65); }
 p { position: absolute; bottom: 1%; width: 100%; text-align: center; color: #4a351d; font-size: 12px; pointer-events: none; }
 
-.hud { position: absolute; top: max(10px, env(safe-area-inset-top)); left: 10px; right: 10px; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-#profile-button, .score-panel { border: 1px solid #f5dda0; border-radius: 16px; background: rgba(42, 48, 29, .92); color: #fff7df; padding: 10px 12px; box-shadow: 0 3px 12px #201b2440; }
-#profile-button { min-height: 54px; max-width: 52%; text-align: left; }
-#player-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: bold; }
-.hud small { display: block; margin-top: 4px; color: #f2dda9; font-size: 11px; }
-.score-panel { text-align: right; pointer-events: none; font-size: 12px; }
-.score-panel strong { color: #ffe18a; font-size: 24px; margin-left: 4px; }
-.ranking-button { position: absolute; left: 10px; top: max(82px, calc(env(safe-area-inset-top) + 72px)); min-height: 44px; padding: 0 14px; border-radius: 16px; background: rgba(42, 48, 29, .92); }
+.hud { height: calc(56px + env(safe-area-inset-top)); padding: calc(6px + env(safe-area-inset-top)) 6px 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.5fr); gap: 6px; align-items: center; background: #29301e; color: #fff7df; }
+#profile-button, .ranking-button { min-height: 44px; min-width: 0; border: 1px solid #bfa56b; border-radius: 10px; background: #3b442b; padding: 4px 8px; }
+#profile-button { text-align: left; }
+#player-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: bold; }
+.hud small { display: block; margin-top: 1px; color: #f2dda9; font-size: 10px; }
+.score-panel { min-width: 0; text-align: right; pointer-events: none; font-size: 10px; white-space: nowrap; }
+.score-panel strong { color: #ffe18a; font-size: 21px; margin-left: 3px; font-variant-numeric: tabular-nums; }
+.ranking-button { font-size: 12px; }
 #profile-summary { margin-bottom: 20px; padding: 12px; background: #e5c99580; border-radius: 14px; }
 #profile-form label { display: block; text-align: left; margin-bottom: 8px; font-size: 14px; }
 #nickname { width: 100%; min-height: 46px; padding: 10px; border: 1px solid #9b783f; border-radius: 10px; background: #fffaf0; color: #51351e; font: inherit; user-select: text; touch-action: auto; }
 #profile-message { min-height: 24px; font-size: 13px; color: #425529; }
-.upload-note { position: static; color: #70572e; font-size: 13px; line-height: 1.6; }
 #nickname:disabled { opacity: 1; background: #efe4cc; }
 button:focus-visible, input:focus-visible { outline: 3px solid #e4ad37; outline-offset: 3px; }
 dialog {
@@ -63,10 +62,7 @@ dialog h2 { font-size: 15px; margin: 20px 0 10px; }
 .ranking-tabs { display: flex; gap: 8px; margin-top: 18px; }
 .ranking-tabs button { flex: 1; min-height: 40px; border-radius: 12px; background: #70572e; }
 #ranking-status { font-size: 12px; margin-bottom: 8px; }
-#submit-score { display: block; padding: 12px; margin-top: 14px; border-radius: 12px; background: #3e5433; color: #fff8dc; text-decoration: none; }
-#submit-score[hidden], button[hidden] { display: none; }
-#manual-upload { display: block; margin-top: 14px; color: #425529; font-size: 14px; line-height: 1.6; }
-#manual-upload[hidden] { display: none; }
+button[hidden] { display: none; }
 .modal-actions { display: flex; gap: 10px; margin: 20px 0 12px; }
 .modal-actions button { flex: 1; min-height: 48px; border-radius: 14px; font-size: 16px; background: #98632f; }
 #close-result { background: #8b8354; }

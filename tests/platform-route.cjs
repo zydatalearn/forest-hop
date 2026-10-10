@@ -31,11 +31,12 @@ const sandbox = vm.createContext({
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8"), sandbox);
 
 const checked = vm.runInContext(`
-    let checked = 0, mandatory = 0;
+    let checked = 0, mandatory = 0, hazards = 0;
     for (let route = 0; route < 100; route++) {
         let source = makePlatform(526, 150);
         for (let index = 0; index < 160; index++) {
             const target = nextPlatform(source);
+            if (target.hazard) hazards++;
             const gap = source.y - target.y;
             if (source.requiredSpring) {
                 mandatory++;
@@ -46,7 +47,7 @@ const checked = vm.runInContext(`
             // Run the actual collision/physics code at 120Hz, aiming for the next center.
             const sourceBottom = source.y - (source.spring ? 20 : 0);
             player = { x: source.x + 7, y: sourceBottom - 46, width: 46, height: 46,
-                vy: source.spring ? springSpeed : jumpSpeed, img: rightImage };
+                vy: source.spring ? springSpeed : jumpSpeed, facing: 1, jumpTime: 0 };
             platforms = [source, target, makePlatform(target.y - 10000, target.x)];
             camera = player.y - height * 0.4;
             highest = player.y;
@@ -73,8 +74,16 @@ const checked = vm.runInContext(`
             checked++;
         }
     }
-    ({ checked, mandatory });
+    player = { x: 140, y: 200, width: 46, height: 46, vy: 0, facing: 1, jumpTime: 0 };
+    platforms = [makePlatform(300, 140), makePlatform(-10000, 140)];
+    platforms[0].hazard = { x: 163, y: 223, radius: 15 };
+    camera = 0;
+    gameOver = false;
+    step(1 / 120);
+    if (!gameOver) throw new Error("Obstacle collision did not end game");
+    ({ checked, mandatory, hazards });
 `, sandbox);
 assert.equal(checked.checked, 16000);
 assert(checked.mandatory > 0);
-console.log(`Passed: ${checked.checked} reachable jumps, including ${checked.mandatory} mandatory spring sections.`);
+assert(checked.hazards > 0);
+console.log(`Passed: ${checked.checked} reachable jumps, ${checked.mandatory} spring sections, ${checked.hazards} obstacle sections and obstacle collision.`);

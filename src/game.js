@@ -4,13 +4,15 @@ const context = board.getContext("2d");
 const width = 360, height = 576;
 board.width = width;
 board.height = height;
-const rightImage = new Image();
-const leftImage = new Image();
+const squirrelImage = new Image();
+const squirrelFrames = [
+    [21, 234, 285, 311], [341, 283, 296, 261], [641, 233, 297, 312], [961, 214, 272, 297],
+    [19, 676, 317, 309], [349, 682, 275, 345], [650, 787, 296, 237], [957, 723, 284, 305]
+];
 const platformImage = new Image();
 const springImage = new Image();
 const brokenImage = new Image();
-rightImage.src = "./assets/images/doodler-right.png";
-leftImage.src = "./assets/images/doodler-left.png";
+squirrelImage.src = "./assets/images/squirrel-jump-sheet.png";
 platformImage.src = "./assets/images/platform-wood.webp";
 springImage.src = "./assets/images/spring.webp";
 brokenImage.src = "./assets/images/platform-broken-wood.webp";
@@ -23,9 +25,6 @@ let accumulator = 0;
 let fragments = [];
 const result = document.getElementById("result");
 const profile = document.getElementById("profile");
-const uploadConfirm = document.getElementById("upload-confirm");
-let completedRun;
-let uploading = false;
 const currentScore = document.getElementById("current-score");
 const bestScore = document.getElementById("best-score");
 let nickname = "森林旅人";
@@ -79,50 +78,16 @@ function renderRanking(values) {
     });
 }
 
-let rankingRequest;
 function showLocalRanking() {
-    rankingRequest?.abort();
     document.getElementById("ranking-title").textContent = "本机排行榜 · 前 10 名";
     document.getElementById("ranking-status").textContent = "";
     renderRanking(records);
 }
 
-async function showOnlineRanking() {
-    rankingRequest?.abort();
-    const request = new AbortController();
-    rankingRequest = request;
-    const timeout = setTimeout(() => request.abort(), 15000);
-    document.getElementById("ranking-title").textContent = "联机排行榜 · 前 10 名";
+function showOnlineRanking() {
+    document.getElementById("ranking-title").textContent = "联机排行 · 未开放";
     document.getElementById("rank-list").replaceChildren();
-    document.getElementById("ranking-status").textContent = "正在读取 GitHub 成绩…";
-    try {
-        const best = new Map();
-        for (let page = 1; ; page++) {
-            const response = await fetch("https://api.github.com/repos/zydatalearn/forest-hop/issues?state=open&per_page=100&page=" + page,
-                { signal: request.signal, headers: { Accept: "application/vnd.github+json" } });
-            if (!response.ok) throw new Error("GitHub 暂时不可用或请求次数已达上限");
-            const issues = await response.json();
-            for (const issue of issues) {
-                if (issue.pull_request || issue.title !== "[Forest Hop Score]" || !issue.user?.login) continue;
-                try {
-                    const match = issue.body?.match(/```json\s*([\s\S]*?)```/);
-                    if (!match) continue;
-                    const value = JSON.parse(match[1]);
-                    if (value.game !== "forest-hop" || !Number.isInteger(value.score) || value.score < 0 ||
-                        typeof value.name !== "string" || !value.name.trim()) continue;
-                    const entry = { name: value.name.trim().slice(0, 12), score: value.score };
-                    if (!best.has(entry.name) || best.get(entry.name).score < entry.score) best.set(entry.name, entry);
-                } catch { /* Ignore unrelated or malformed submissions. */ }
-            }
-            if (issues.length < 100) break;
-        }
-        if (rankingRequest !== request) return;
-        renderRanking([...best.values()].sort((a, b) => b.score - a.score).slice(0, 10));
-        document.getElementById("ranking-status").textContent = "同名取最高分 · 玩家提交，未经验证";
-    } catch (error) {
-        if (rankingRequest === request) document.getElementById("ranking-status").textContent =
-            request.signal.aborted ? "读取超时，请重新点击联机排行" : "读取失败，请稍后重试或查看本机排行";
-    } finally { clearTimeout(timeout); }
+    document.getElementById("ranking-status").textContent = "联机排行暂未开放，成绩仅保存在本机";
 }
 
 function showResult(ended) {
@@ -133,10 +98,6 @@ function showResult(ended) {
     document.getElementById("result-summary").innerHTML =
         "本次分数<br><strong>" + score() + "</strong><br>最高纪录 " + (records[0]?.score || 0);
     showLocalRanking();
-    const submit = document.getElementById("submit-score");
-    submit.hidden = !gameOver;
-    submit.disabled = !!completedRun?.uploaded;
-    submit.textContent = completedRun?.uploaded ? "本次成绩已上传" : "上传本次成绩";
     document.getElementById("close-result").textContent = ended ? "查看场景" : "继续游戏";
     document.getElementById("play-again").hidden = !gameOver;
     if (!result.open) result.showModal();
@@ -144,67 +105,12 @@ function showResult(ended) {
 
 function finish() {
     gameOver = true;
-    completedRun = { name: nickname, score: score() };
-    records.push(completedRun);
+    records.push({ name: nickname, score: score() });
     records.sort((a, b) => b.score - a.score);
     records = records.slice(0, 10);
     try { localStorage.setItem("forest-hop-scores", JSON.stringify(records)); } catch {}
     showResult(true);
-    showUploadConfirm();
 }
-
-function showUploadConfirm() {
-    if (!completedRun || completedRun.uploaded || uploading) return;
-    document.getElementById("upload-summary").textContent = completedRun.name + " · " + completedRun.score + " 分";
-    document.getElementById("upload-status").textContent = "";
-    const manual = document.getElementById("manual-upload");
-    manual.hidden = true;
-    const body = "Forest Hop 手动提交成绩（未经验证）\n\n```json\n" +
-        JSON.stringify({ game: "forest-hop", name: completedRun.name, score: completedRun.score }, null, 2) + "\n```";
-    manual.href = "https://github.com/zydatalearn/forest-hop/issues/new?title=" +
-        encodeURIComponent("[Forest Hop Score]") + "&body=" + encodeURIComponent(body);
-    uploadConfirm.showModal();
-}
-
-async function uploadScore() {
-    if (!completedRun || completedRun.uploaded || uploading) return;
-    uploading = true;
-    const run = completedRun;
-    const request = new AbortController();
-    const timeout = setTimeout(() => request.abort(), 15000);
-    const yes = document.getElementById("upload-yes");
-    const no = document.getElementById("upload-no");
-    yes.disabled = no.disabled = true;
-    document.getElementById("upload-status").textContent = "正在上传…";
-    try {
-        if (!FOREST_HOP_API_URL) throw new Error("上传服务尚未部署，本机成绩已保留");
-        const response = await fetch(FOREST_HOP_API_URL + "/scores", {
-            method: "POST", signal: request.signal,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: run.name, score: run.score })
-        });
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.message || "上传失败，请稍后重试");
-        }
-        run.uploaded = true;
-        const submit = document.getElementById("submit-score");
-        submit.disabled = true;
-        submit.textContent = "本次成绩已上传";
-        uploadConfirm.close();
-        await showOnlineRanking();
-    } catch (error) {
-        document.getElementById("manual-upload").hidden = false;
-        document.getElementById("upload-status").textContent = request.signal.aborted ?
-            "请求超时，可能已上传，请先查看联机排行再决定是否重试；也可使用下方备用入口" :
-            error instanceof TypeError ? "无法连接上传服务，本机成绩已保存。可切换网络重试，或使用下方 GitHub 备用入口" : error.message;
-    } finally {
-        clearTimeout(timeout);
-        uploading = false;
-        yes.disabled = no.disabled = false;
-    }
-}
-
 
 function makePlatform(y, x, spring = false, fragile = false) {
     return { x, y, width: 60, height: 18, spring, fragile, broken: false, compressedUntil: 0, requiredSpring: false };
@@ -231,14 +137,24 @@ function nextPlatform(previous) {
     }
     const fragile = !spring && !springGap && !previous.spring && !previous.fragile &&
         Math.random() < 0.12 + difficulty * 0.18;
-    return makePlatform(previous.y - gap, x, spring, fragile);
+    const platform = makePlatform(previous.y - gap, x, spring, fragile);
+    // Keep a corridor around the complete reachable jump, including the player's body.
+    if (routeScore >= 180 && Math.random() < 0.18 + difficulty * 0.22) {
+        const left = Math.min(previous.x, x) - 14;
+        const right = Math.max(previous.x, x) + 74;
+        const sides = [];
+        if (left >= 48) sides.push(24);
+        if (right <= width - 48) sides.push(width - 24);
+        if (sides.length) platform.hazard = { x: sides[Math.floor(Math.random() * sides.length)],
+            y: (previous.y + platform.y) / 2 - 23, radius: 15 };
+    }
+    return platform;
 }
 
 function restart() {
-    if (uploadConfirm.open) uploadConfirm.close();
     if (result.open) result.close();
     for (const id of ["left", "right"]) document.getElementById(id).classList.remove("pressed");
-    player = { x: 157, y: 458, width: 46, height: 46, vy: jumpSpeed, img: rightImage };
+    player = { x: 157, y: 458, width: 46, height: 46, vy: jumpSpeed, facing: 1, jumpTime: 0 };
     platforms = [makePlatform(526, 150, false)];
     for (let i = 1; i < 10; i++) {
         platforms.push(nextPlatform(platforms[platforms.length - 1]));
@@ -266,7 +182,8 @@ function step(dt) {
     const right = keys.has("ArrowRight") || keys.has("KeyD") || [...pointers.values()].includes(1);
     const direction = Number(right) - Number(left);
     player.x += direction * 240 * dt;
-    if (direction) player.img = direction < 0 ? leftImage : rightImage;
+    if (direction) player.facing = direction;
+    player.jumpTime = (player.jumpTime || 0) + dt;
     if (player.x > width) player.x = -player.width;
     if (player.x + player.width < 0) player.x = width;
 
@@ -287,6 +204,7 @@ function step(dt) {
             if (crossesSpring || crossesPlatform) {
                 player.y = (crossesSpring ? platform.y - 20 : platform.y) - player.height;
                 player.vy = hitsSpring ? springSpeed : jumpSpeed;
+                player.jumpTime = 0;
                 if (platform.fragile) {
                     platform.broken = true;
                     for (const side of [-1, 1]) {
@@ -300,6 +218,16 @@ function step(dt) {
         }
     }
 
+    for (const platform of platforms) {
+        const hazard = platform.hazard;
+        if (!hazard) continue;
+        const nearestX = Math.max(player.x + 6, Math.min(hazard.x, player.x + player.width - 6));
+        const nearestY = Math.max(player.y + 6, Math.min(hazard.y, player.y + player.height - 6));
+        if ((nearestX - hazard.x) ** 2 + (nearestY - hazard.y) ** 2 < hazard.radius ** 2) {
+            finish();
+            return;
+        }
+    }
     highest = Math.min(highest, player.y);
     // World coordinates stay fixed; only the camera follows new heights.
     camera = Math.min(camera, player.y - height * 0.4);
@@ -311,9 +239,49 @@ function step(dt) {
     if (player.y - camera > height) finish();
 }
 
+function characterFrame() {
+    if (gameOver) return Math.floor(performance.now() / 800) % 2 ? 7 : 0;
+    if (player.jumpTime < 0.045) return 6;
+    if (player.jumpTime < 0.085) return 1;
+    if (player.jumpTime < 0.14) return 2;
+    if (player.vy < -120) return 3;
+    if (player.vy > 120) return 5;
+    return 4;
+}
+
+function drawCharacter() {
+    if (!squirrelImage.complete || !squirrelImage.naturalWidth) return;
+    const [x, y, frameWidth, frameHeight] = squirrelFrames[characterFrame()];
+    const scale = player.height / 345;
+    context.save();
+    context.translate(player.x + player.width / 2, player.y - camera + player.height);
+    context.scale(player.facing < 0 ? -1 : 1, 1);
+    context.drawImage(squirrelImage, x, y, frameWidth, frameHeight,
+        -frameWidth * scale / 2, -frameHeight * scale, frameWidth * scale, frameHeight * scale);
+    context.restore();
+}
+
 function draw() {
     context.clearRect(0, 0, width, height);
     for (const platform of platforms) {
+        if (platform.hazard) {
+            const hazard = platform.hazard;
+            const y = hazard.y - camera;
+            context.fillStyle = "#813f35";
+            context.strokeStyle = "#ffdf9a";
+            context.lineWidth = 2;
+            context.beginPath();
+            for (let i = 0; i < 16; i++) {
+                const angle = i * Math.PI / 8;
+                const radius = i % 2 ? 10 : 19;
+                const x = hazard.x + Math.cos(angle) * radius;
+                const pointY = y + Math.sin(angle) * radius;
+                if (i) context.lineTo(x, pointY); else context.moveTo(x, pointY);
+            }
+            context.closePath();
+            context.fill();
+            context.stroke();
+        }
         if (platform.broken) continue;
         const y = platform.y - camera;
         const image = platform.fragile ? brokenImage : platformImage;
@@ -342,9 +310,7 @@ function draw() {
         }
         context.globalAlpha = 1;
     }
-    if (player.img.complete && player.img.naturalWidth) {
-        context.drawImage(player.img, player.x, player.y - camera, player.width, player.height);
-    }
+    drawCharacter();
     currentScore.textContent = score();
     bestScore.textContent = Math.max(score(), records[0]?.score || 0);
 }
@@ -389,7 +355,7 @@ for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
     playfield.addEventListener(type, release);
 }
 document.addEventListener("keydown", event => {
-    if (profile.open || uploadConfirm.open || event.target.matches("input, textarea")) return;
+    if (profile.open || event.target.matches("input, textarea")) return;
     if (["ArrowLeft", "ArrowRight", "KeyA", "KeyD", "Space"].includes(event.code)) {
         event.preventDefault();
         if (event.code === "Space" && gameOver) { restart(); return; }
@@ -437,13 +403,9 @@ profile.addEventListener("close", clearControls);
 document.getElementById("ranking").addEventListener("click", () => showResult(false));
 document.getElementById("local-ranking").addEventListener("click", showLocalRanking);
 document.getElementById("online-ranking").addEventListener("click", showOnlineRanking);
-document.getElementById("upload-no").addEventListener("click", () => uploadConfirm.close());
-document.getElementById("upload-yes").addEventListener("click", uploadScore);
-document.getElementById("submit-score").addEventListener("click", showUploadConfirm);
-uploadConfirm.addEventListener("cancel", event => { if (uploading) event.preventDefault(); });
 document.getElementById("play-again").addEventListener("click", restart);
 document.getElementById("close-result").addEventListener("click", () => result.close());
-result.addEventListener("close", () => { rankingRequest?.abort(); clearControls(); });
+result.addEventListener("close", clearControls);
 restart();
 if (!hasNickname) showProfile();
 requestAnimationFrame(frame);
