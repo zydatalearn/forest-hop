@@ -111,7 +111,6 @@ dialog small { color: #8b724c; font-size: 11px; }
 #ranking-status:empty, #ranking-self:empty { display: none; }
 #ranking-self { padding: 7px 8px; margin: 6px 0; border-radius: 8px; background: #e5c99580; }
 
-#start-height { display: block; width: 100%; margin-top: 6px; padding: 8px; border: 1px solid #9b783f; border-radius: 8px; background: #fffaf0; color: #51351e; font: inherit; }
 
 #profile { padding: 20px; border-width: 2px; border-radius: 20px; }
 #profile h1 { margin: 6px 0 16px; font-size: 24px; }
@@ -123,3 +122,12 @@ dialog small { color: #8b724c; font-size: 11px; }
 #profile .modal-actions { margin: 12px 0 6px; }
 #profile-message { min-height: 18px; margin-top: 6px; font-size: 11px; }
 .profile-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+
+.camp-choice { margin: 0 0 14px; padding: 0; border: 0; text-align: left; font-size: 12px; }
+.camp-choice legend { margin-bottom: 6px; }
+.camp-choice > div { display: flex; gap: 6px; }
+.camp-choice button { flex: 1; min-height: 40px; border: 1px solid #bfa56b; border-radius: 9px; background: #fffaf080; color: #79502a; font-size: 12px; }
+.camp-choice button[aria-pressed="true"] { background: #98632f; color: #fff8dc; }
+.camp-choice button:disabled { cursor: default; }
+#camp-hint { display: block; margin-top: 5px; font-size: 10px; }
+#camp-hint[hidden] { display: none; }

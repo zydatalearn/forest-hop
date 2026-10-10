@@ -164,14 +164,26 @@ vm.runInContext(`
     player.y=200; camera=0; step(1/120);
     check(old.width===30 && old.motion.baseX===115 && old.item.x===old.x+15, "Narrowing preserves center and item/motion alignment");
     check(makePlatform(300,100,true).width===30, "Generated spring boards shrink");
-    bestHeight=4999;
-    const change=document.getElementById("start-height").listeners.get("change");
-    change({target:{value:"2000"}}); check(startHeight===0 && altitude()===0, "Locked camp rejects selection");
-    bestHeight=5000; change({target:{value:"2000"}});
+    bestHeight=3000;
+    const chooseCamp=document.getElementById("camp-option").listeners.get("click");
+    const chooseForest=document.getElementById("forest-option").listeners.get("click");
+    const lockedHeight=altitude(); chooseCamp(); check(startHeight===0 && altitude()===lockedHeight, "Locked camp rejects selection without restarting");
+    highest=458; bestHeight=5000; chooseCamp();
     check(startHeight===2000 && altitude()===2000 && score()===2000 && bonusScore===0, "Camp starts at height-derived score without guessed pickups");
     check(camera===-20000 && platforms[0].y===526-20000 && !platforms[0].fragile, "Camp world and stable starting board");
     updatePressure(0); check(nextWaveAt===8 && !bombWave, "Camp grants three-second grace before wave schedule");
     restart(); check(altitude()===2000, "Restart retains selected camp");
-    change({target:{value:"0"}}); check(altitude()===0 && score()===0, "Zero start remains available");
+    chooseForest(); check(altitude()===0 && score()===0, "Zero start remains available");
 `, sandbox);
 console.log("Passed: 6000m width boundary/alignment, camp unlock, height score, world positioning, grace and restart.");
+
+vm.runInContext(`
+    FEATURES.satiety=true; useCamp=true; bestHeight=10000; highest=458; restart();
+    check(startHeight===7000 && altitude()===7000 && score()===8750, "Dynamic camp uses highest minus 3000 and tier score");
+    check(platforms[0].width===30 && !platforms[0].fragile && platforms[0].x+15===180, "High camp starts centered on a solid narrow board");
+    highest=458-12000*10; restart(); check(startHeight===9000, "New record changes next camp");
+    updatePressure(0); gameTime=2; updatePressure(1); check(satiety===15, "High camp hunger grace");
+    gameTime=3; updatePressure(1); check(satiety===14, "Hunger begins after grace");
+    useCamp=false; restart(); check(startHeight===0 && altitude()===0, "Forest option remains zero");
+`, sandbox);
+console.log("Passed: dynamic camp progression, tier score, narrow starting board and hunger grace.");

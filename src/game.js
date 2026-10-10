@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.4.0";
+const gameVersion = "1.5.0";
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -60,10 +60,11 @@ try {
     if (savedName) { nickname = savedName; hasNickname = true; }
 } catch {}
 document.getElementById("player-name").textContent = nickname;
-let bestHeight = 0, startHeight = 0;
+let bestHeight = 0, startHeight = 0, useCamp = false;
 try {
     bestHeight = Math.max(0, Number(localStorage.getItem("forest-hop-height")) || 0);
-    startHeight = bestHeight >= 5000 && localStorage.getItem("forest-hop-start") === "2000" ? 2000 : 0;
+    useCamp = ["camp", "2000"].includes(localStorage.getItem("forest-hop-start"));
+    startHeight = useCamp ? Math.max(0, Math.floor(bestHeight) - 3000) : 0;
 } catch {}
 let records = [];
 try {
@@ -355,6 +356,11 @@ function nextPlatform(previous) {
 }
 
 function restart() {
+    if (player) {
+        bestHeight = Math.max(bestHeight, altitude());
+        try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
+    }
+    startHeight = useCamp ? Math.max(0, Math.floor(bestHeight) - 3000) : 0;
     if (uploadConfirm.open) uploadConfirm.close();
     completedRun = undefined;
     uploaded = false;
@@ -374,8 +380,9 @@ function restart() {
     deathReason = "";
     bonusScore = 0;
     highest = player.y;
-    platforms = [makePlatform(526 - startHeight * 10, 150, false)];
+    platforms = [makePlatform(526 - startHeight * 10, startHeight >= 6000 ? 165 : 150, false)];
     platforms[0].campStart = startHeight > 0;
+    if (platforms[0].campStart) platforms[0].fragile = false;
     for (let i = 1; i < 10; i++) {
         const next = nextPlatform(platforms[platforms.length - 1]);
         platforms.push(...next.extras, next);
@@ -483,7 +490,7 @@ function absorbHit(falling = false) {
 
 function updatePressure(dt) {
     if (FEATURES.satiety && altitude() >= 8000) {
-        satiety = satiety === null ? 15 : Math.max(0, satiety - dt);
+        satiety = satiety === null ? 15 : Math.max(0, satiety - (startHeight > 0 && gameTime < 3 ? 0 : dt));
         // Upgrade boards already generated before the threshold; never regenerate eaten snacks.
         let pendingFood = false;
         for (const platform of platforms) {
@@ -662,7 +669,7 @@ function step(dt) {
         }
     }
     highest = Math.min(highest, player.y);
-    if (bestHeight < 5000 && altitude() >= 5000) {
+    if (altitude() > bestHeight) {
         bestHeight = altitude();
         try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
     }
@@ -877,11 +884,23 @@ for (const kind of ["dash", "feather", "spring-boots"]) {
         if (event.detail === 0) useSkill(kind);
     });
 }
-document.getElementById("start-height").addEventListener("change", event => {
-    startHeight = bestHeight >= 5000 && event.target.value === "2000" ? 2000 : 0;
-    try { localStorage.setItem("forest-hop-start", String(startHeight)); } catch {}
-    restart();
-});
+function updateCampChoice() {
+    const meters = Math.max(0, Math.floor(bestHeight) - 3000);
+    document.getElementById("camp-option").disabled = meters === 0;
+    document.getElementById("camp-option").textContent = meters + " m 营地";
+    document.getElementById("forest-option").setAttribute("aria-pressed", String(!useCamp));
+    document.getElementById("camp-option").setAttribute("aria-pressed", String(useCamp));
+    document.getElementById("camp-hint").textContent = "营地起点 = 最高高度 − 3000 m";
+}
+for (const [id, camp] of [["forest-option", false], ["camp-option", true]]) {
+    document.getElementById(id).addEventListener("click", () => {
+        if (camp && bestHeight <= 3000 || useCamp === camp) return;
+        useCamp = camp;
+        try { localStorage.setItem("forest-hop-start", camp ? "camp" : "0"); } catch {}
+        restart();
+        updateCampChoice();
+    });
+}
 
 document.getElementById("hard-mode").addEventListener("change", event => {
     hardMode = event.target.checked;
@@ -913,9 +932,7 @@ function showProfile() {
     document.getElementById("nickname").disabled = hasNickname;
     document.getElementById("save-nickname").hidden = hasNickname;
     document.getElementById("close-profile").hidden = !hasNickname;
-    document.getElementById("camp-option").disabled = bestHeight < 5000;
-    document.getElementById("start-height").value = String(startHeight);
-    document.getElementById("camp-option").textContent = bestHeight >= 5000 ? "2000 m 营地" : "2000 m 营地（最高达到 5000 m 解锁）";
+    updateCampChoice();
     document.getElementById("profile-best-score").textContent = records[0]?.score || 0;
     document.getElementById("profile-best-height").textContent = Math.max(bestHeight, altitude()) + " m";
     document.getElementById("profile-message").textContent = hasNickname ? "昵称已锁定" : "名称确认后无法修改，请慎重填写";

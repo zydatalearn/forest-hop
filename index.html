@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>森林跃跃 · Forest Hop</title>
-    <link rel="stylesheet" href="src/style.css?v=1.4.0">
-    <script src="src/game.js?v=1.4.0" defer></script>
+    <link rel="stylesheet" href="src/style.css?v=1.5.0">
+    <script src="src/game.js?v=1.5.0" defer></script>
 </head>
 <body>
     <div id="loading" role="status" aria-live="polite">
@@ -34,7 +34,7 @@
             <h1>个人主页</h1>
             <div id="profile-summary"><div><small>最高分</small><strong id="profile-best-score">0</strong></div><div><small>最高高度</small><strong id="profile-best-height">0 m</strong></div></div>
             <label class="mode-choice difficulty-choice"><input type="checkbox" id="hard-mode"> <span>高难度<small>苔藓、蜂窝与风区 · 切换重开</small></span></label>
-            <label class="mode-choice" for="start-height">起点 · 切换重开 <select id="start-height"><option value="0">0 m 森林入口</option><option id="camp-option" value="2000" disabled>2000 m 营地（最高达到 5000 m 解锁）</option></select></label>
+            <fieldset class="camp-choice"><legend>起点 · 切换重开</legend><div><button id="forest-option" type="button" aria-pressed="true">0 m 森林入口</button><button id="camp-option" type="button" aria-pressed="false" disabled>0 m 营地</button></div><small id="camp-hint">营地起点 = 最高高度 − 3000 m</small></fieldset>
             <button id="open-item-help" type="button">道具说明</button>
             <form id="profile-form">
                 <label for="nickname">昵称</label>
