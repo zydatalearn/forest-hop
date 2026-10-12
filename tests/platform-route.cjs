@@ -24,6 +24,7 @@ randomMath.random = () => {
     return seed / 4294967296;
 };
 const sandbox = vm.createContext({
+    setTimeout() {},
     document, Math: randomMath, window: { addEventListener() {} },
     localStorage: { getItem(key) { return key === "forest-hop-name" ? "测试玩家" : null; }, setItem() {} },
     Image: class { decode() { return new Promise(() => {}); } }, performance: { now() { return 0; } }, requestAnimationFrame() {}

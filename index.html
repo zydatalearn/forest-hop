@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>森林跃跃 · Forest Hop</title>
-    <link rel="stylesheet" href="src/style.css?v=1.5.0">
-    <script src="src/game.js?v=1.5.0" defer></script>
+    <link rel="stylesheet" href="src/style.css?v=1.8.1">
+    <script src="src/game.js?v=1.8.1" defer></script>
 </head>
 <body>
     <div id="loading" role="status" aria-live="polite">
@@ -14,10 +14,13 @@
         <button id="retry-loading" hidden>重新加载</button>
     </div>
     <main id="playfield">
+        <div id="celebration" hidden>新纪录！</div>
         <header class="hud">
-            <button id="profile-button" aria-label="打开个人主页"><span id="player-name">森林旅人</span><small>主页</small></button>
+            <button id="profile-button" aria-label="打开个人主页"><span id="player-name">森林旅人</span><small id="player-title">森林旅人</small></button>
             <button id="ranking" class="ranking-button">排行</button>
-            <div class="score-panel"><span>得分 <strong id="current-score">0</strong></span><small>高度 <b id="current-height">0 m</b> · 最高分 <b id="best-score">0</b></small><small id="satiety-status" hidden>饱食 <progress id="satiety-meter" max="15" value="15" aria-label="饱食度"></progress><span id="satiety-time"></span></small></div>
+            <button id="pause-button" class="ranking-button" aria-label="暂停游戏">暂停</button>
+            <button id="music-button" class="ranking-button" aria-label="切换音乐">♫</button>
+            <div class="score-panel"><span>得分 <strong id="current-score">0</strong></span><small><span id="region-name">春日森林</span> · 高度 <b id="current-height">0 m</b> · 最高分 <b id="best-score">0</b></small><small id="satiety-status" hidden>饱食 <progress id="satiety-meter" max="15" value="15" aria-label="饱食度"></progress><span id="satiety-time"></span></small></div>
         </header>
         <canvas id="board" aria-label="森林跃跃游戏"></canvas>
         <div class="skill-controls">
@@ -29,6 +32,13 @@
             <button id="left" aria-label="向左">❮</button>
             <button id="right" aria-label="向右">❯</button>
         </div>
+        <dialog id="pause-dialog">
+            <h1>游戏暂停</h1>
+            <p class="dialog-text">休息一下，准备继续跃上树梢。</p>
+            <label class="setting-row"><input type="checkbox" id="sound-enabled" checked> 音效</label>
+            <label class="setting-row"><input type="checkbox" id="music-enabled" checked> 音乐</label>
+            <div class="modal-actions"><button id="resume-game">继续游戏</button><button id="restart-paused">重新开始</button></div>
+        </dialog>
         <dialog id="profile">
             <div class="modal-header">FOREST HOP</div>
             <h1>个人主页</h1>
@@ -36,6 +46,12 @@
             <label class="mode-choice difficulty-choice"><input type="checkbox" id="hard-mode"> <span>高难度<small>苔藓、蜂窝与风区 · 切换重开</small></span></label>
             <fieldset class="camp-choice"><legend>起点 · 切换重开</legend><div><button id="forest-option" type="button" aria-pressed="true">0 m 森林入口</button><button id="camp-option" type="button" aria-pressed="false" disabled>0 m 营地</button></div><small id="camp-hint">营地起点 = 最高高度 − 3000 m</small></fieldset>
             <button id="open-item-help" type="button">道具说明</button>
+            <section id="achievements-panel" aria-label="成就">
+                <h2>成就</h2><ul id="achievement-list"></ul>
+                <h2>今日挑战</h2><p id="daily-challenge"><strong id="daily-name">今日目标</strong> <span id="daily-progress"></span></p>
+                <button id="open-cosmetics" type="button">外观与称号</button>
+                <button id="open-stages" type="button">固定关卡</button>
+            </section>
             <form id="profile-form">
                 <label for="nickname">昵称</label>
                 <input id="nickname" name="nickname" maxlength="12" required placeholder="输入昵称（最多 12 个字）" autocomplete="nickname">
@@ -43,6 +59,15 @@
                 <div id="profile-message" role="status"></div>
             </form>
             <footer class="profile-footer"><small>成绩保存在当前浏览器</small><small id="game-version"></small></footer>
+        </dialog>
+        <dialog id="cosmetics-dialog">
+            <h1>外观与称号</h1><h2>外观</h2><div id="skin-list" class="cosmetic-grid"></div>
+            <h2>称号</h2><div id="title-list" class="cosmetic-grid"></div>
+            <div class="modal-actions"><button id="close-cosmetics">完成</button></div>
+        </dialog>
+        <dialog id="stages-dialog">
+            <h1>固定关卡</h1><div id="stage-list"></div>
+            <div class="modal-actions"><button id="close-stages">返回</button></div>
         </dialog>
         <dialog id="item-help">
             <h1>道具说明</h1>
@@ -61,6 +86,8 @@
         <dialog id="result">
             <h1 id="result-title">游戏结束</h1>
             <div id="result-summary" aria-live="polite"></div>
+            <div id="run-stats" aria-live="polite"></div>
+            <div id="stage-result" hidden><strong id="stage-stars"></strong><button id="retry-stage">重试关卡</button><button id="back-to-stages">选择关卡</button></div>
             <div class="ranking-tabs"><button id="local-ranking">本机</button><button id="online-ranking">联机</button></div>
             <h2 id="ranking-title">本机 · 前 3</h2>
             <div id="ranking-status" role="status"></div>

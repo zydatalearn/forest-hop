@@ -1,5 +1,8 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.5.0";
+const gameVersion = "1.8.1";
+const SKINS = [{ id: "squirrel", name: "森林松鼠", unlock: "免费", tint: null }, { id: "golden", name: "金松鼠", unlock: "达到 3000 m", tint: "#e7b743" }, { id: "firefly", name: "萤火松鼠", unlock: "解锁树冠之上", tint: "#91d7b5" }];
+const TITLES = [{ id: "forest-traveler", name: "森林旅人", unlock: "免费" }, { id: "high-climber", name: "登树先驱", unlock: "达到 1000 m" }, { id: "bomb-breaker", name: "炸弹克星", unlock: "摧毁 5 个危险物" }];
+const LEVELS = [{ id: "tutorial-1", name: "树芽小径", target: 300 }, { id: "spring-run", name: "弹簧峡谷", target: 800 }, { id: "bomb-lane", name: "炸弹回廊", target: 1200 }];
 document.getElementById("game-version").textContent = "v" + gameVersion;
 const board = document.getElementById("board");
 const context = board.getContext("2d");
@@ -39,6 +42,9 @@ const itemNames = { dash: "冲刺", shield: "护心果", glide: "滑翔", magnet
 const effectTimers = ["dashRemaining", "dashCooldown", "invulnerable", "glideRemaining", "magnetRemaining", "slowRemaining"];
 let hardMode = false, gameTime = 0, combo = 0, collectionChain = null;
 let bombWaves = [], bombWave = null, nextWaveAt = null, satiety = null, deathReason = "";
+let runItems = 0;
+let runTrace = [], bestTrace = [];
+try { bestTrace = JSON.parse(localStorage.getItem("forest-hop-trace") || "[]"); } catch {}
 const keys = new Set();
 const pointers = new Map();
 let player, platforms, camera, highest, gameOver, lastTime;
@@ -51,6 +57,12 @@ const uploadConfirm = document.getElementById("upload-confirm");
 const scoresUrl = "https://forest-hop-d2g5ydn2ydb209f8a-1466119337.ap-shanghai.app.tcloudbase.com/forest-hop-api/scores";
 let completedRun, uploaded = false, uploading = false, rankingRequest = 0;
 const profile = document.getElementById("profile");
+const pauseDialog = document.getElementById("pause-dialog");
+const pauseButton = document.getElementById("pause-button");
+let soundEnabled = true;
+let selectedSkin = "squirrel", selectedTitle = "forest-traveler", stageMode = null, currentStageId = null, stageComplete = false;
+let musicEnabled = true, musicTimer = 0, musicNote = 0, lastRegionName = "";
+let audioContext;
 const currentScore = document.getElementById("current-score");
 const bestScore = document.getElementById("best-score");
 let nickname = "森林旅人";
@@ -77,6 +89,102 @@ try {
     localStorage.setItem("forest-hop-scores", JSON.stringify(records));
 } catch { /* Storage may be unavailable; keep scores for this session. */ }
 
+const achievementDefs = [
+    { id: "first-hop", name: "初次跃起", description: "完成一局游戏", test: stats => stats.runs >= 1 },
+    { id: "high-flyer", name: "树冠之上", description: "达到 1000 米", test: stats => stats.bestHeight >= 1000 },
+    { id: "collector", name: "森林收藏家", description: "收集 20 个道具", test: stats => stats.items >= 20 },
+    { id: "combo-master", name: "连跳高手", description: "连续踩中 20 块完整木板", test: stats => stats.bestCombo >= 20 },
+    { id: "bomb-breaker", name: "炸弹克星", description: "冲刺摧毁 5 个危险物", test: stats => stats.bombs >= 5 }
+];
+let lifetimeStats = { runs: 0, bestHeight: 0, items: 0, bestCombo: 0, bombs: 0 };
+let unlockedAchievements = [];
+let dailyChallenge = { day: "", height: 0 };
+try { dailyChallenge = JSON.parse(localStorage.getItem("forest-hop-daily") || "null") || dailyChallenge; } catch {}
+try {
+    lifetimeStats = { ...lifetimeStats, ...JSON.parse(localStorage.getItem("forest-hop-stats") || "{}") };
+    unlockedAchievements = JSON.parse(localStorage.getItem("forest-hop-achievements") || "[]");
+    if (!Array.isArray(unlockedAchievements)) unlockedAchievements = [];
+} catch {}
+function saveProgress() {
+    try {
+        localStorage.setItem("forest-hop-stats", JSON.stringify(lifetimeStats));
+        localStorage.setItem("forest-hop-achievements", JSON.stringify(unlockedAchievements));
+    } catch {}
+}
+function checkAchievements() {
+    for (const achievement of achievementDefs) {
+        if (!unlockedAchievements.includes(achievement.id) && achievement.test(lifetimeStats)) {
+            unlockedAchievements.push(achievement.id);
+            playTone(980, 0.16, "triangle");
+        }
+    }
+    saveProgress();
+    renderAchievements();
+}
+function renderCosmetics() {
+    const skinList = document.getElementById("skin-list"), titleList = document.getElementById("title-list");
+    if (!skinList || !titleList) return;
+    skinList.replaceChildren(); titleList.replaceChildren();
+    for (const skin of SKINS) {
+        const unlocked = skin.id === "squirrel" || (skin.id === "golden" && lifetimeStats.bestHeight >= 3000) || (skin.id === "firefly" && unlockedAchievements.includes("high-flyer"));
+        const button = document.createElement("button"); button.className = "cosmetic-card"; button.dataset.skinId = skin.id; button.disabled = !unlocked;
+        button.textContent = skin.name + (selectedSkin === skin.id ? " · 已装备" : unlocked ? " · 使用" : " · " + skin.unlock); skinList.append(button);
+    }
+    for (const title of TITLES) {
+        const unlocked = title.id === "forest-traveler" || (title.id === "high-climber" && lifetimeStats.bestHeight >= 1000) || (title.id === "bomb-breaker" && lifetimeStats.bombs >= 5);
+        const button = document.createElement("button"); button.className = "cosmetic-card"; button.dataset.titleId = title.id; button.disabled = !unlocked;
+        button.textContent = title.name + (selectedTitle === title.id ? " · 已装备" : unlocked ? " · 使用" : " · " + title.unlock); titleList.append(button);
+    }
+}
+function updateIdentityUI() {
+    const title = TITLES.find(item => item.id === selectedTitle)?.name || "森林旅人";
+    document.getElementById("player-title").textContent = title;
+    document.getElementById("player-name").title = title;
+}
+function renderStages() {
+    const list = document.getElementById("stage-list"); if (!list) return; list.replaceChildren();
+    LEVELS.forEach((level, index) => { const button = document.createElement("button"); button.className = "stage-card"; button.dataset.stageId = level.id; button.textContent = level.name + " · " + level.target + " m"; button.disabled = index > 0 && !localStorage.getItem("forest-hop-stage-" + LEVELS[index - 1].id); list.append(button); });
+}
+function startStage(id) { const level = LEVELS.find(item => item.id === id); if (!level) return; currentStageId = id; stageMode = { ...level }; stageComplete = false; document.getElementById("stage-result").hidden = true; document.getElementById("stages-dialog").close(); if (profile.open) profile.close(); restart(); }
+function renderAchievements() {
+    const list = document.getElementById("achievement-list");
+    if (!list) return;
+    list.replaceChildren();
+    for (const achievement of achievementDefs) {
+        const item = document.createElement("li");
+        const unlocked = unlockedAchievements.includes(achievement.id);
+        item.className = unlocked ? "unlocked" : "locked";
+        item.textContent = (unlocked ? "✓ " : "○ ") + achievement.name + " · " + achievement.description;
+        list.append(item);
+    }
+    updateDailyChallenge();
+}
+
+function updateDailyChallenge(meters = 0) {
+    const now = new Date();
+    const day = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+    const target = ((Number(day.replaceAll("-", "")) % 3) + 1) * 500;
+    const previous = dailyChallenge;
+    if (dailyChallenge.day !== day) dailyChallenge = { day, height: 0 };
+    if (meters > dailyChallenge.height) dailyChallenge = { day, height: meters };
+    if (dailyChallenge !== previous) {
+        try { localStorage.setItem("forest-hop-daily", JSON.stringify(dailyChallenge)); } catch {}
+    }
+    document.getElementById("daily-name").textContent = "今日目标：达到 " + target + " 米";
+    document.getElementById("daily-progress").textContent = dailyChallenge.height >= target ? "已完成 ✓" : Math.floor(dailyChallenge.height) + " / " + target + " m";
+}
+
+const regions = [
+    { name: "春日森林", min: 0, color: "#f0dfbd" },
+    { name: "萤火沼泽", min: 1500, color: "#d4dfc4" },
+    { name: "秋叶峡谷", min: 3500, color: "#e5c29a" },
+    { name: "雪山树冠", min: 6000, color: "#dcebf0" },
+    { name: "夜空树梢", min: 9000, color: "#514968" }
+];
+function currentRegion() {
+    const meters = altitude();
+    return regions.reduce((selected, region) => meters >= region.min ? region : selected, regions[0]);
+}
 function altitude() {
     return Math.max(0, Math.floor((458 - highest) / 10));
 }
@@ -90,6 +198,29 @@ function score() {
     const meters = altitude();
     return Math.floor(meters + Math.max(0, meters - 2000) * 0.25 +
         Math.max(0, meters - 5000) * 0.25 + Math.max(0, meters - 8000) * 0.25) + bonusScore;
+}
+
+function playMusicPulse(region) {
+    if (!musicEnabled || !soundEnabled || document.hidden || pauseDialog.open) return;
+    try { if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+    const notes = region.name === "夜空树梢" ? [196, 247, 294] : region.name === "秋叶峡谷" ? [262, 330, 392] : [330, 392, 494];
+    const frequency = notes[musicNote++ % notes.length];
+    playTone(frequency, 0.16, "sine");
+}
+function playTone(frequency = 440, duration = 0.06, type = "sine") {
+    if (!soundEnabled) return;
+    try {
+        audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        oscillator.type = type;
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.045, audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+        oscillator.connect(gain).connect(audioContext.destination);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + duration);
+    } catch {}
 }
 
 function clearControls() {
@@ -203,6 +334,8 @@ function showResult(ended) {
     document.getElementById("result-title").textContent = ended ? deathReason || "游戏结束" : "排行榜";
     document.getElementById("result-summary").innerHTML =
         "<span>本次 <strong>" + score() + "</strong></span><span>最佳 <b>" + (records[0]?.score || 0) + "</b></span>";
+    document.getElementById("run-stats").textContent = ended ?
+        "最高 " + altitude() + " m · 连击 " + combo + " · 收集道具 " + runItems : "";
     showLocalRanking();
     document.getElementById("close-result").textContent = ended ? "查看场景" : "继续游戏";
     document.getElementById("play-again").hidden = !gameOver;
@@ -211,17 +344,32 @@ function showResult(ended) {
 }
 
 function finish(reason = "") {
+    if (gameOver) return;
     gameOver = true;
+    lifetimeStats.runs++;
+    lifetimeStats.bestHeight = Math.max(lifetimeStats.bestHeight, altitude());
+    lifetimeStats.bestCombo = Math.max(lifetimeStats.bestCombo, combo);
+    checkAchievements();
+    playTone(180, 0.28, "sawtooth");
     bestHeight = Math.max(bestHeight, altitude());
     try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
+    if (score() > (records[0]?.score || 0)) {
+        const celebration = document.getElementById("celebration");
+        celebration.hidden = false;
+        setTimeout(() => { celebration.hidden = true; }, 1800);
+    }
     deathReason = reason;
+    if (altitude() >= (bestTrace.at(-1)?.altitude || 0)) {
+        bestTrace = runTrace.slice();
+        try { localStorage.setItem("forest-hop-trace", JSON.stringify(bestTrace)); } catch {}
+    }
     completedRun = Object.freeze({ name: nickname, score: score() });
     records.push(completedRun);
     records.sort((a, b) => b.score - a.score);
     records = records.slice(0, 3);
     try { localStorage.setItem("forest-hop-scores", JSON.stringify(records)); } catch {}
     showResult(true);
-    showUploadConfirm();
+    if (!stageComplete) showUploadConfirm();
 }
 
 function makePlatform(y, x, spring = false, fragile = false) {
@@ -356,6 +504,8 @@ function nextPlatform(previous) {
 }
 
 function restart() {
+    if (pauseDialog.open) pauseDialog.close();
+    document.getElementById("stage-result").hidden = true;
     if (player) {
         bestHeight = Math.max(bestHeight, altitude());
         try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
@@ -371,7 +521,11 @@ function restart() {
         shield: false, invulnerable: 0, glideRemaining: 0, magnetRemaining: 0, featherCharges: 0,
         featherUsed: false, bootsCharges: 0, bootsArmed: false, slowRemaining: 0 });
     gameTime = 0;
+    stageComplete = false;
     combo = 0;
+    runItems = 0;
+    runTrace = [];
+    renderAchievements();
     collectionChain = null;
     bombWaves = [];
     bombWave = null;
@@ -408,7 +562,7 @@ function movingSpeed() {
 }
 
 function useSkill(kind) {
-    if (!assetsReady || gameOver || result.open || profile.open || document.hidden) return;
+    if (!assetsReady || gameOver || result.open || profile.open || pauseDialog.open || document.hidden) return;
     if (kind === "dash" && player.dashCharges > 0 && player.dashCooldown <= 0 && player.dashRemaining <= 0) {
         player.dashCharges--;
         player.dashRemaining = 0.30;
@@ -432,6 +586,10 @@ function award(points, x, y) {
 
 function collectItem(item) {
     item.collected = true;
+    lifetimeStats.items++;
+    runItems++;
+    checkAchievements();
+    playTone(item.kind === "diamond" ? 880 : 560, 0.08, "triangle");
     const kind = item.kind;
     if (kind === "pinecone" || kind === "diamond") {
         if (satiety !== null) satiety = Math.min(15, satiety + (kind === "diamond" ? 8 : 4));
@@ -532,8 +690,13 @@ function updatePressure(dt) {
 }
 
 function step(dt) {
-    if (gameOver || result.open || profile.open || document.hidden) return;
+    if (gameOver || stageComplete || result.open || profile.open || pauseDialog.open || document.hidden) return;
     gameTime += dt;
+    if (musicEnabled && gameTime - musicTimer > 3) { musicTimer = gameTime; playMusicPulse(currentRegion()); }
+    if (Math.floor(gameTime * 10) % 6 === 0 && (!runTrace.length || runTrace[runTrace.length - 1].t !== Math.floor(gameTime * 10))) {
+        runTrace.push({ t: Math.floor(gameTime * 10), x: player.x, altitude: altitude() });
+        if (runTrace.length > 900) runTrace.shift();
+    }
     updatePressure(dt);
     let dashing = player.dashRemaining > 1e-9;
     for (const field of effectTimers)
@@ -601,11 +764,16 @@ function step(dt) {
                 player.vy = hitsSpring || player.bootsArmed ? springSpeed : jumpSpeed;
                 player.bootsArmed = false;
                 player.featherUsed = false;
-                if (hitsSpring) { player.dashRemaining = 0; dashing = false; }
+                if (hitsSpring) { player.dashRemaining = 0; dashing = false; playTone(660, 0.08, "triangle"); }
+                else playTone(420, 0.035);
                 if (platform.mossy) player.slowRemaining = 0.4;
                 if (platform.fragile) combo = 0;
                 else if (!platform.comboVisited) combo++;
                 platform.comboVisited = true;
+                if (combo > lifetimeStats.bestCombo) {
+                    lifetimeStats.bestCombo = combo;
+                    checkAchievements();
+                }
                 player.jumpTime = 0;
                 if (platform.fragile) {
                     platform.broken = true;
@@ -638,6 +806,8 @@ function step(dt) {
             if (dashing && player.dashBombs < 1) {
                 delete platform.hazard;
                 player.dashBombs++;
+                lifetimeStats.bombs++;
+                checkAchievements();
                 award(15, hazard.x, hazard.y);
             } else if (absorbHit()) delete platform.hazard;
             else { finish(); return; }
@@ -663,14 +833,19 @@ function step(dt) {
             if (dashing && player.dashBombs < 1) {
                 bomb.destroyed = true;
                 player.dashBombs++;
+                lifetimeStats.bombs++;
+                checkAchievements();
                 award(15, bomb.x, bomb.y);
             } else if (absorbHit()) bomb.destroyed = true;
             else { finish(); return; }
         }
     }
     highest = Math.min(highest, player.y);
+    updateDailyChallenge(altitude() - startHeight);
     if (altitude() > bestHeight) {
         bestHeight = altitude();
+        lifetimeStats.bestHeight = Math.max(lifetimeStats.bestHeight, bestHeight);
+        checkAchievements();
         try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
     }
     if (altitude() >= 5000) for (const platform of platforms) platform.fragile = true;
@@ -683,6 +858,14 @@ function step(dt) {
         platforms.push(...next.extras, next);
     }
     if (satiety === 0) { finish("饱食度耗尽"); return; }
+    if (stageMode && altitude() - startHeight >= stageMode.target) {
+        stageComplete = true;
+        try { localStorage.setItem("forest-hop-stage-" + stageMode.id, "1"); } catch {}
+        finish("关卡完成！");
+        document.getElementById("stage-result").hidden = false;
+        document.getElementById("stage-stars").textContent = "关卡完成！ ★★★";
+        return;
+    }
     if (player.y - camera > height && !absorbHit(true)) finish();
 }
 
@@ -703,6 +886,8 @@ function drawCharacter() {
     context.save();
     context.translate(player.x + player.width / 2, player.y - camera + player.height);
     context.scale(player.facing < 0 ? -1 : 1, 1);
+    const skin = SKINS.find(item => item.id === selectedSkin);
+    if (skin?.tint) { context.globalAlpha = 0.22; context.fillStyle = skin.tint; context.beginPath(); context.arc(0, -player.height * 0.55, player.width * 0.58, 0, Math.PI * 2); context.fill(); context.globalAlpha = 1; }
     context.drawImage(squirrelImage, x, y, frameWidth, frameHeight,
         -frameWidth * scale / 2, -frameHeight * scale, frameWidth * scale, frameHeight * scale);
     context.restore();
@@ -710,11 +895,17 @@ function drawCharacter() {
 
 function draw() {
     context.clearRect(0, 0, width, height);
+    const region = currentRegion();
+    document.getElementById("region-name").textContent = stageMode ? "关卡 · " + stageMode.name : region.name;
+    context.fillStyle = region.color;
+    context.fillRect(0, 0, width, height);
     if (backgroundImage.complete && backgroundImage.naturalWidth) {
         // Slow parallax over a quiet background; reflect at the edges without a repeat seam.
         const travel = Math.max(0, -camera) * 0.008 % (height * 0.4);
         const offset = travel <= height * 0.2 ? travel : height * 0.4 - travel;
+        context.globalAlpha = currentRegion().name === "夜空树梢" ? 0.48 : 0.82;
         context.drawImage(backgroundImage, 0, -offset, width, height * 1.2);
+        context.globalAlpha = 1;
     }
     for (const platform of platforms) {
         const opacity = platformOpacity(platform);
@@ -794,6 +985,17 @@ function draw() {
         player.y = originalY;
         context.globalAlpha = 1;
     }
+    if (bestTrace.length) {
+        const ghost = bestTrace.find(point => point.altitude >= altitude()) || bestTrace[bestTrace.length - 1];
+        if (ghost && Math.abs(ghost.altitude - altitude()) < 120) {
+            context.globalAlpha = 0.2;
+            context.fillStyle = "#fff4c2";
+            context.beginPath();
+            context.arc(ghost.x + 23, player.y - camera + 23, 18, 0, Math.PI * 2);
+            context.fill();
+            context.globalAlpha = 1;
+        }
+    }
     drawCharacter();
     if (player.invulnerable > 0 && !player.shield) {
         context.fillStyle = "#fff7df";
@@ -836,6 +1038,13 @@ function draw() {
 }
 
 function frame(time) {
+    if (lastRegionName !== currentRegion().name) {
+        lastRegionName = currentRegion().name;
+        const celebration = document.getElementById("celebration");
+        celebration.textContent = lastRegionName;
+        celebration.hidden = false;
+        setTimeout(() => { celebration.hidden = true; }, 1400);
+    }
     const elapsed = lastTime === undefined ? 0 : Math.min((time - lastTime) / 1000, 0.05);
     lastTime = time;
     accumulator += elapsed;
@@ -902,18 +1111,29 @@ for (const [id, camp] of [["forest-option", false], ["camp-option", true]]) {
     });
 }
 
+try {
+    soundEnabled = localStorage.getItem("forest-hop-sound") !== "off";
+    selectedSkin = localStorage.getItem("forest-hop-skin") || "squirrel";
+    selectedTitle = localStorage.getItem("forest-hop-title") || "forest-traveler";
+    musicEnabled = localStorage.getItem("forest-hop-music") !== "off";
+    document.getElementById("sound-enabled").checked = soundEnabled;
+    document.getElementById("music-enabled").checked = musicEnabled;
+} catch {}
+
 document.getElementById("hard-mode").addEventListener("change", event => {
     hardMode = event.target.checked;
     restart();
 });
 
 document.addEventListener("keydown", event => {
-    if (!assetsReady || profile.open || event.target.matches("input, textarea")) return;
+    if (!assetsReady || profile.open) return;
+    if (event.target.matches("input, textarea")) return;
     if (event.code === "Space" && event.target.matches("button")) return;
+    if (event.code === "Escape") { togglePause(); return; }
     if (["ArrowLeft", "ArrowRight", "KeyA", "KeyD", "Space", "ArrowUp", "KeyK", "KeyF", "KeyB"].includes(event.code)) {
         event.preventDefault();
         if (event.code === "Space" && gameOver) { restart(); return; }
-        if (result.open) return;
+        if (result.open || pauseDialog.open) return;
         if (["Space", "ArrowUp", "KeyK", "KeyF", "KeyB"].includes(event.code)) {
             if (!event.repeat) useSkill(event.code === "KeyF" ? "feather" : event.code === "KeyB" ? "spring-boots" : "dash");
             return;
@@ -926,6 +1146,13 @@ document.addEventListener("keyup", event => keys.delete(event.code));
 window.addEventListener("blur", clearControls);
 document.addEventListener("visibilitychange", clearControls);
 
+function togglePause() {
+    if (!assetsReady || gameOver || result.open || profile.open) return;
+    clearControls();
+    if (pauseDialog.open) pauseDialog.close();
+    else pauseDialog.showModal();
+}
+
 function showProfile() {
     clearControls();
     document.getElementById("nickname").value = hasNickname ? nickname : "";
@@ -936,8 +1163,39 @@ function showProfile() {
     document.getElementById("profile-best-score").textContent = records[0]?.score || 0;
     document.getElementById("profile-best-height").textContent = Math.max(bestHeight, altitude()) + " m";
     document.getElementById("profile-message").textContent = hasNickname ? "昵称已锁定" : "名称确认后无法修改，请慎重填写";
+    renderAchievements();
+    renderCosmetics(); renderStages(); updateIdentityUI();
     profile.showModal();
 }
+pauseButton.addEventListener("click", togglePause);
+document.getElementById("open-cosmetics").addEventListener("click", () => { renderCosmetics(); document.getElementById("cosmetics-dialog").showModal(); });
+document.getElementById("close-cosmetics").addEventListener("click", () => document.getElementById("cosmetics-dialog").close());
+document.getElementById("skin-list").addEventListener("click", event => { const id = event.target.closest("[data-skin-id]")?.dataset.skinId; if (id && !event.target.disabled) { selectedSkin = id; localStorage.setItem("forest-hop-skin", id); renderCosmetics(); } });
+document.getElementById("title-list").addEventListener("click", event => { const id = event.target.closest("[data-title-id]")?.dataset.titleId; if (id && !event.target.disabled) { selectedTitle = id; localStorage.setItem("forest-hop-title", id); updateIdentityUI(); renderCosmetics(); } });
+document.getElementById("open-stages").addEventListener("click", () => { renderStages(); document.getElementById("stages-dialog").showModal(); });
+document.getElementById("close-stages").addEventListener("click", () => document.getElementById("stages-dialog").close());
+document.getElementById("stage-list").addEventListener("click", event => { const id = event.target.closest("[data-stage-id]")?.dataset.stageId; if (id && !event.target.disabled) startStage(id); });
+document.getElementById("retry-stage").addEventListener("click", () => startStage(currentStageId || "tutorial-1"));
+document.getElementById("back-to-stages").addEventListener("click", () => { result.close(); renderStages(); document.getElementById("stages-dialog").showModal(); });
+document.getElementById("resume-game").addEventListener("click", () => pauseDialog.close());
+document.getElementById("restart-paused").addEventListener("click", restart);
+document.getElementById("music-enabled").addEventListener("change", event => {
+    musicEnabled = event.target.checked;
+    document.getElementById("music-button").setAttribute("aria-pressed", String(musicEnabled));
+    try { localStorage.setItem("forest-hop-music", musicEnabled ? "on" : "off"); } catch {}
+});
+document.getElementById("music-button").setAttribute("aria-pressed", String(musicEnabled));
+document.getElementById("music-button").addEventListener("click", () => {
+    musicEnabled = !musicEnabled;
+    document.getElementById("music-enabled").checked = musicEnabled;
+    document.getElementById("music-button").setAttribute("aria-pressed", String(musicEnabled));
+    try { localStorage.setItem("forest-hop-music", musicEnabled ? "on" : "off"); } catch {}
+});
+document.getElementById("sound-enabled").addEventListener("change", event => {
+    soundEnabled = event.target.checked;
+    try { localStorage.setItem("forest-hop-sound", soundEnabled ? "on" : "off"); } catch {}
+});
+pauseDialog.addEventListener("close", clearControls);
 document.getElementById("profile-button").addEventListener("click", showProfile);
 profile.addEventListener("cancel", event => { if (!hasNickname) event.preventDefault(); });
 document.getElementById("close-profile").addEventListener("click", () => profile.close());

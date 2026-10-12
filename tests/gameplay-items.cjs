@@ -4,6 +4,7 @@ const vm = require("node:vm");
 const path = require("node:path");
 
 const elements = new Map();
+const storage = new Map([["forest-hop-name", "测试玩家"]]);
 const document = {
     hidden: false,
     listeners: new Map(),
@@ -27,8 +28,9 @@ randomMath.random = () => {
     return seed / 4294967296;
 };
 const sandbox = vm.createContext({
+    setTimeout() {},
     document, Math: randomMath, window: { addEventListener() {} },
-    localStorage: { getItem(key) { return key === "forest-hop-name" ? "测试玩家" : null; }, setItem() {} },
+    localStorage: { getItem(key) { return storage.get(key) ?? null; }, setItem(key, value) { storage.set(key, String(value)); } },
     Image: class { decode() { return new Promise(() => {}); } }, performance: { now() { return 0; } }, requestAnimationFrame() {}
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8"), sandbox);
@@ -215,6 +217,43 @@ vm.runInContext(`
     step(1 / 120); check(platforms[0].hazard.triggered, "Hive trigger");
     for (let i = 0; i < 241; i++) step(1 / 120);
     check(platforms[0].hazard.kind === "bug", "Hive did not release bug");
+    setup(); hardMode = false;
+    lifetimeStats.bestCombo = 0;
+    unlockedAchievements = unlockedAchievements.filter(id => id !== "combo-master");
+    combo = 19;
+    player.x = 147; player.y = 350; player.vy = 300;
+    for (let i = 0; i < 5; i++) step(1 / 120);
+    check(lifetimeStats.bestCombo === 20 && unlockedAchievements.includes("combo-master"), "Landing must save peak combo and unlock achievement immediately");
+    combo = 0; finish();
+    check(lifetimeStats.bestCombo === 20, "Reset combo erased peak achievement");
+    setup(); startStage("tutorial-1");
+    highest = 458 - (startHeight + 300) * 10;
+    draw();
+    check(!gameOver && !stageComplete, "Rendering must not complete stages");
+    step(1 / 120);
+    check(gameOver && stageComplete && result.open && completedRun && !uploadConfirm.open, "Completion must open results and record run without covering stage controls");
+    check(!document.getElementById("stage-result").hidden, "Stage controls missing");
+    const completedRuns = lifetimeStats.runs;
+    finish(); draw(); step(1 / 120);
+    check(lifetimeStats.runs === completedRuns, "Completion counted twice");
+    document.getElementById("retry-stage").listeners.get("click")();
+    check(stageMode.id === "tutorial-1" && !gameOver && !stageComplete && !result.open, "Stage retry failed");
+    stageMode = null; setup();
+    const enabledBefore = musicEnabled;
+    document.getElementById("music-button").listeners.get("click")();
+    check(musicEnabled !== enabledBefore && document.getElementById("music-enabled").checked === musicEnabled, "Music button did not synchronize setting");
+    document.getElementById("music-enabled").listeners.get("change")({target:{checked:enabledBefore}});
+    check(musicEnabled === enabledBefore, "Pause music setting failed");
+    dailyChallenge = {day:"2000-01-01",height:99999};
+    updateDailyChallenge(0);
+    check(dailyChallenge.height === 0, "Daily progress did not reset at date change");
+    updateDailyChallenge(1500);
+    check(document.getElementById("daily-progress").textContent === "已完成 ✓", "Daily completion missing");
+    renderAchievements(); restart();
+    check(dailyChallenge.height === 1500 && document.getElementById("daily-name").textContent.includes("今日目标"), "Daily progress erased by rendering or restart");
+    dailyChallenge = JSON.parse(localStorage.getItem("forest-hop-daily"));
+    updateDailyChallenge();
+    check(dailyChallenge.height === 1500 && document.getElementById("daily-progress").textContent === "已完成 ✓", "Daily completion was not persisted");
 `, sandbox);
 console.log("Passed: skill charges, timers, pause, bomb/shield collisions, rescue, glide, magnet, air jump, boots, chains and hard-mode generation.");
 
