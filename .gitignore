@@ -3,4 +3,5 @@
 .wrangler/
 node_modules/
 .publish-forest-hop/
+.deploy/
 

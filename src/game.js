@@ -1,5 +1,5 @@
 // Physics use seconds so movement is consistent across refresh rates.
-const gameVersion = "1.8.1";
+const gameVersion = "1.8.2";
 const SKINS = [{ id: "squirrel", name: "森林松鼠", unlock: "免费", tint: null }, { id: "golden", name: "金松鼠", unlock: "达到 3000 m", tint: "#e7b743" }, { id: "firefly", name: "萤火松鼠", unlock: "解锁树冠之上", tint: "#91d7b5" }];
 const TITLES = [{ id: "forest-traveler", name: "森林旅人", unlock: "免费" }, { id: "high-climber", name: "登树先驱", unlock: "达到 1000 m" }, { id: "bomb-breaker", name: "炸弹克星", unlock: "摧毁 5 个危险物" }];
 const LEVELS = [{ id: "tutorial-1", name: "树芽小径", target: 300 }, { id: "spring-run", name: "弹簧峡谷", target: 800 }, { id: "bomb-lane", name: "炸弹回廊", target: 1200 }];
@@ -44,7 +44,10 @@ let hardMode = false, gameTime = 0, combo = 0, collectionChain = null;
 let bombWaves = [], bombWave = null, nextWaveAt = null, satiety = null, deathReason = "";
 let runItems = 0;
 let runTrace = [], bestTrace = [];
-try { bestTrace = JSON.parse(localStorage.getItem("forest-hop-trace") || "[]"); } catch {}
+try {
+    const saved = JSON.parse(localStorage.getItem("forest-hop-trace") || "[]");
+    if (Array.isArray(saved)) bestTrace = saved.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.altitude) && Number.isFinite(point.t)).slice(-900);
+} catch {}
 const keys = new Set();
 const pointers = new Map();
 let player, platforms, camera, highest, gameOver, lastTime;
@@ -65,6 +68,25 @@ let musicEnabled = true, musicTimer = 0, musicNote = 0, lastRegionName = "";
 let audioContext;
 const currentScore = document.getElementById("current-score");
 const bestScore = document.getElementById("best-score");
+// Cache hot-path nodes and compare display values before touching the DOM.
+const hud = Object.fromEntries(["current-height", "region-name", "satiety-status", "satiety-meter", "satiety-time", "daily-name", "daily-progress", "combo-status", "event-status"].map(id => [id, document.getElementById(id)]));
+const skillButtons = ["dash", "feather", "spring-boots"].map(kind => {
+    const button = document.getElementById("skill-" + kind);
+    return { kind, button, label: button.querySelector("span") };
+});
+const effectBadges = ["glide", "magnet", "invulnerable"].map(kind => ({ kind, node: document.getElementById("effect-" + kind) }));
+const displayValues = new WeakMap();
+function display(node, property, value) {
+    let values = displayValues.get(node);
+    if (!values) { values = {}; displayValues.set(node, values); }
+    if (values[property] === value) return;
+    values[property] = value;
+    if (property === "low") node.classList.toggle("low", value);
+    else if (property === "style") node.setAttribute("style", value);
+    else node[property] = value;
+}
+let renderNeeded = true;
+let bonusGate = null, nextGate = 600;
 let nickname = "森林旅人";
 let hasNickname = false;
 try {
@@ -105,11 +127,22 @@ try {
     unlockedAchievements = JSON.parse(localStorage.getItem("forest-hop-achievements") || "[]");
     if (!Array.isArray(unlockedAchievements)) unlockedAchievements = [];
 } catch {}
-function saveProgress() {
+let progressDirty = false, dailyDirty = false, heightDirty = false, lastSaveAt = -Infinity;
+function flushProgress(force = false) {
+    const now = performance.now();
+    if (!force && now - lastSaveAt < 250) return;
+    if (!progressDirty && !dailyDirty && !heightDirty) return;
+    lastSaveAt = now;
     try {
-        localStorage.setItem("forest-hop-stats", JSON.stringify(lifetimeStats));
-        localStorage.setItem("forest-hop-achievements", JSON.stringify(unlockedAchievements));
+        if (dailyDirty) localStorage.setItem("forest-hop-daily", JSON.stringify(dailyChallenge));
+        if (heightDirty) localStorage.setItem("forest-hop-height", String(bestHeight));
+        if (progressDirty) saveProgress();
+        progressDirty = dailyDirty = heightDirty = false;
     } catch {}
+}
+function saveProgress() {
+    localStorage.setItem("forest-hop-stats", JSON.stringify(lifetimeStats));
+    localStorage.setItem("forest-hop-achievements", JSON.stringify(unlockedAchievements));
 }
 function checkAchievements() {
     for (const achievement of achievementDefs) {
@@ -118,8 +151,7 @@ function checkAchievements() {
             playTone(980, 0.16, "triangle");
         }
     }
-    saveProgress();
-    renderAchievements();
+    progressDirty = true;
 }
 function renderCosmetics() {
     const skinList = document.getElementById("skin-list"), titleList = document.getElementById("title-list");
@@ -143,7 +175,9 @@ function updateIdentityUI() {
 }
 function renderStages() {
     const list = document.getElementById("stage-list"); if (!list) return; list.replaceChildren();
-    LEVELS.forEach((level, index) => { const button = document.createElement("button"); button.className = "stage-card"; button.dataset.stageId = level.id; button.textContent = level.name + " · " + level.target + " m"; button.disabled = index > 0 && !localStorage.getItem("forest-hop-stage-" + LEVELS[index - 1].id); list.append(button); });
+    LEVELS.forEach((level, index) => { const button = document.createElement("button"); button.className = "stage-card"; button.dataset.stageId = level.id; button.textContent = level.name + " · " + level.target + " m"; let completed = false;
+        try { completed = !!localStorage.getItem("forest-hop-stage-" + LEVELS[Math.max(0, index - 1)].id); } catch {}
+        button.disabled = index > 0 && !completed; list.append(button); });
 }
 function startStage(id) { const level = LEVELS.find(item => item.id === id); if (!level) return; currentStageId = id; stageMode = { ...level }; stageComplete = false; document.getElementById("stage-result").hidden = true; document.getElementById("stages-dialog").close(); if (profile.open) profile.close(); restart(); }
 function renderAchievements() {
@@ -158,9 +192,11 @@ function renderAchievements() {
         list.append(item);
     }
     updateDailyChallenge();
+    flushProgress(true);
 }
 
 function updateDailyChallenge(meters = 0) {
+    meters = Math.max(0, Math.floor(meters));
     const now = new Date();
     const day = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
     const target = ((Number(day.replaceAll("-", "")) % 3) + 1) * 500;
@@ -168,10 +204,10 @@ function updateDailyChallenge(meters = 0) {
     if (dailyChallenge.day !== day) dailyChallenge = { day, height: 0 };
     if (meters > dailyChallenge.height) dailyChallenge = { day, height: meters };
     if (dailyChallenge !== previous) {
-        try { localStorage.setItem("forest-hop-daily", JSON.stringify(dailyChallenge)); } catch {}
+        dailyDirty = true;
     }
-    document.getElementById("daily-name").textContent = "今日目标：达到 " + target + " 米";
-    document.getElementById("daily-progress").textContent = dailyChallenge.height >= target ? "已完成 ✓" : Math.floor(dailyChallenge.height) + " / " + target + " m";
+    display(hud["daily-name"], "textContent", "今日目标：达到 " + target + " 米");
+    display(hud["daily-progress"], "textContent", dailyChallenge.height >= target ? "已完成 ✓" : dailyChallenge.height + " / " + target + " m");
 }
 
 const regions = [
@@ -336,9 +372,10 @@ function showResult(ended) {
         "<span>本次 <strong>" + score() + "</strong></span><span>最佳 <b>" + (records[0]?.score || 0) + "</b></span>";
     document.getElementById("run-stats").textContent = ended ?
         "最高 " + altitude() + " m · 连击 " + combo + " · 收集道具 " + runItems : "";
+    document.getElementById("death-tip").textContent = ended ? ({ "撞到炸弹": "下次用冲刺撞碎它，或从空隙绕过。", "撞到飞虫": "留意蜂窝，用护心果或冲刺抵挡飞虫。", "坠落了": "试试二段跳或冲刺，护心果也能救援一次。", "饱食度耗尽": "多收集松果和钻石补充饱食度。" }[deathReason] || "") : "";
     showLocalRanking();
-    document.getElementById("close-result").textContent = ended ? "查看场景" : "继续游戏";
-    document.getElementById("play-again").hidden = !gameOver;
+    document.getElementById("close-result").textContent = gameOver ? "再玩一次" : "继续游戏";
+    document.getElementById("play-again").hidden = true;
     document.getElementById("submit-score").hidden = !gameOver || uploaded;
     if (!result.open) result.showModal();
 }
@@ -352,7 +389,7 @@ function finish(reason = "") {
     checkAchievements();
     playTone(180, 0.28, "sawtooth");
     bestHeight = Math.max(bestHeight, altitude());
-    try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
+    heightDirty = true;
     if (score() > (records[0]?.score || 0)) {
         const celebration = document.getElementById("celebration");
         celebration.hidden = false;
@@ -369,7 +406,9 @@ function finish(reason = "") {
     records = records.slice(0, 3);
     try { localStorage.setItem("forest-hop-scores", JSON.stringify(records)); } catch {}
     showResult(true);
-    if (!stageComplete) showUploadConfirm();
+    renderAchievements();
+    flushProgress(true);
+    renderNeeded = true;
 }
 
 function makePlatform(y, x, spring = false, fragile = false) {
@@ -508,7 +547,8 @@ function restart() {
     document.getElementById("stage-result").hidden = true;
     if (player) {
         bestHeight = Math.max(bestHeight, altitude());
-        try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
+        heightDirty = true;
+        flushProgress(true);
     }
     startHeight = useCamp ? Math.max(0, Math.floor(bestHeight) - 3000) : 0;
     if (uploadConfirm.open) uploadConfirm.close();
@@ -525,7 +565,9 @@ function restart() {
     combo = 0;
     runItems = 0;
     runTrace = [];
-    renderAchievements();
+    bonusGate = null;
+    nextGate = [600, 1000, 1500].find(value => value > startHeight) || Infinity;
+    renderNeeded = true;
     collectionChain = null;
     bombWaves = [];
     bombWave = null;
@@ -562,7 +604,7 @@ function movingSpeed() {
 }
 
 function useSkill(kind) {
-    if (!assetsReady || gameOver || result.open || profile.open || pauseDialog.open || document.hidden) return;
+    if (!assetsReady || gameOver || result.open || profile.open || pauseDialog.open || tutorial.open || document.hidden) return;
     if (kind === "dash" && player.dashCharges > 0 && player.dashCooldown <= 0 && player.dashRemaining <= 0) {
         player.dashCharges--;
         player.dashRemaining = 0.30;
@@ -631,6 +673,10 @@ function absorbHit(falling = false) {
             if (extras.has(platform) || platform.hazard || platform.y > camera + height - 100) continue;
             if (!target || platform.y > target.y) target = platform;
         }
+        if (!target) {
+            target = makePlatform(camera + height - 150, Math.max(0, Math.min(width - 60, player.x)));
+            platforms.push(target);
+        }
         target.broken = false;
         target.fragile = altitude() >= 5000;
         const y = target.y + 50;
@@ -689,8 +735,12 @@ function updatePressure(dt) {
     for (const platform of platforms) delete platform.hazard;
 }
 
+function isPaused() {
+    return gameOver || stageComplete || result.open || profile.open || pauseDialog.open || tutorial.open || document.hidden;
+}
 function step(dt) {
-    if (gameOver || stageComplete || result.open || profile.open || pauseDialog.open || document.hidden) return;
+    if (isPaused()) return;
+    const meters = altitude();
     gameTime += dt;
     if (musicEnabled && gameTime - musicTimer > 3) { musicTimer = gameTime; playMusicPulse(currentRegion()); }
     if (Math.floor(gameTime * 10) % 6 === 0 && (!runTrace.length || runTrace[runTrace.length - 1].t !== Math.floor(gameTime * 10))) {
@@ -704,13 +754,13 @@ function step(dt) {
     pickupEffects = pickupEffects.filter(effect => effect.life > 0);
     for (const effect of pickupEffects) { effect.life -= dt; effect.y -= 24 * dt; }
     for (const platform of platforms) {
-        if (altitude() >= 5000) platform.fragile = true;
-        if (altitude() >= 6000 && platform.width === 60) {
+        if (meters >= 5000) platform.fragile = true;
+        if (meters >= 6000 && platform.width === 60) {
             platform.width = 30; platform.x += 15;
             if (platform.motion) platform.motion.baseX += 15;
         }
         if (platform.campStart && gameTime < 3) platform.fragile = false;
-        if (platform.motion && altitude() >= 2000) {
+        if (platform.motion && meters >= 2000) {
             const motion = platform.motion;
             motion.phase += movingSpeed() / motion.amplitude * dt;
             platform.x = motion.baseX + Math.sin(motion.phase) * motion.amplitude;
@@ -724,8 +774,9 @@ function step(dt) {
         piece.x += piece.vx * dt;
         piece.y += piece.vy * dt;
     }
-    const left = keys.has("ArrowLeft") || keys.has("KeyA") || [...pointers.values()].includes(-1);
-    const right = keys.has("ArrowRight") || keys.has("KeyD") || [...pointers.values()].includes(1);
+    let left = keys.has("ArrowLeft") || keys.has("KeyA");
+    let right = keys.has("ArrowRight") || keys.has("KeyD");
+    for (const direction of pointers.values()) { if (direction < 0) left = true; else right = true; }
     const direction = Number(right) - Number(left);
     const moveSpeed = player.slowRemaining > 0 ? 120 : player.glideRemaining > 0 ? 300 : 240;
     player.x += direction * moveSpeed * dt;
@@ -810,7 +861,7 @@ function step(dt) {
                 checkAchievements();
                 award(15, hazard.x, hazard.y);
             } else if (absorbHit()) delete platform.hazard;
-            else { finish(); return; }
+            else { finish(hazard.kind === "bomb" ? "撞到炸弹" : "撞到飞虫"); return; }
         }
         const item = platform.item;
         if (item && !item.collected && player.magnetRemaining > 0) {
@@ -837,17 +888,20 @@ function step(dt) {
                 checkAchievements();
                 award(15, bomb.x, bomb.y);
             } else if (absorbHit()) bomb.destroyed = true;
-            else { finish(); return; }
+            else { finish("撞到炸弹"); return; }
         }
     }
     highest = Math.min(highest, player.y);
-    updateDailyChallenge(altitude() - startHeight);
+    const newMeters = altitude();
+    if (newMeters !== meters) updateDailyChallenge(newMeters - startHeight);
+    updateBonusGate();
     if (altitude() > bestHeight) {
         bestHeight = altitude();
         lifetimeStats.bestHeight = Math.max(lifetimeStats.bestHeight, bestHeight);
         checkAchievements();
-        try { localStorage.setItem("forest-hop-height", String(bestHeight)); } catch {}
+        heightDirty = true;
     }
+    flushProgress();
     if (altitude() >= 5000) for (const platform of platforms) platform.fragile = true;
     // World coordinates stay fixed; only the camera follows new heights.
     camera = Math.min(camera, player.y - height * 0.4);
@@ -866,7 +920,7 @@ function step(dt) {
         document.getElementById("stage-stars").textContent = "关卡完成！ ★★★";
         return;
     }
-    if (player.y - camera > height && !absorbHit(true)) finish();
+    if (player.y - camera > height && !absorbHit(true)) finish("坠落了");
 }
 
 function characterFrame() {
@@ -896,7 +950,7 @@ function drawCharacter() {
 function draw() {
     context.clearRect(0, 0, width, height);
     const region = currentRegion();
-    document.getElementById("region-name").textContent = stageMode ? "关卡 · " + stageMode.name : region.name;
+    display(hud["region-name"], "textContent", stageMode ? "关卡 · " + stageMode.name : region.name);
     context.fillStyle = region.color;
     context.fillRect(0, 0, width, height);
     if (backgroundImage.complete && backgroundImage.naturalWidth) {
@@ -959,8 +1013,13 @@ function draw() {
                 context.ellipse(hazard.x, y, 15, hazard.kind === "bug" ? 8 : 18, 0, 0, Math.PI * 2);
                 context.fill();
                 context.fillStyle = "#51351e";
-                context.font = "bold 14px sans-serif";
-                context.fillText(hazard.kind === "bug" ? "≋" : "蜂", hazard.x - 7, y + 5);
+                for (const offset of [-6, 0, 6]) context.fillRect(hazard.x - 10, y + offset, 20, 2);
+                if (hazard.kind === "bug") {
+                    context.fillStyle = "#fff4d8";
+                    for (const side of [-1, 1]) {
+                        context.beginPath(); context.ellipse(hazard.x + side * 7, y - 9, 7, 4, side * .5, 0, Math.PI * 2); context.fill();
+                    }
+                }
             }
         }
         if (platform.item && !platform.item.collected) {
@@ -1020,24 +1079,58 @@ function draw() {
         context.fillText((effect.label ? effect.label + " " : "") + "+" + effect.points, effect.x - 10, effect.y - camera);
     }
     context.globalAlpha = 1;
-    currentScore.textContent = score();
-    document.getElementById("current-height").textContent = altitude() + " m";
-    bestScore.textContent = Math.max(score(), records[0]?.score || 0);
-    const satietyStatus = document.getElementById("satiety-status");
-    satietyStatus.hidden = satiety === null;
-    satietyStatus.classList.toggle("low", satiety !== null && satiety <= 4);
-    document.getElementById("satiety-meter").value = satiety ?? 15;
-    document.getElementById("satiety-time").textContent = satiety === null ? "" : Math.ceil(satiety) + "s";
-    for (const [kind, charges] of [["dash", player.dashCharges], ["feather", player.featherCharges], ["spring-boots", player.bootsCharges]]) {
-        const button = document.getElementById("skill-" + kind);
-        button.hidden = !charges && !(kind === "spring-boots" && player.bootsArmed) && !(kind === "dash" && player.dashRemaining > 0);
-        button.disabled = gameOver || !charges || (kind === "dash" && player.dashCooldown > 0) ||
-            (kind === "feather" && player.featherUsed) || (kind === "spring-boots" && player.bootsArmed);
-        button.querySelector("span").textContent = kind === "spring-boots" && player.bootsArmed ? "✓" : String(charges || 0);
+    if (bonusGate) {
+        context.strokeStyle = "#e7b743"; context.lineWidth = 4;
+        context.strokeRect(bonusGate.x, bonusGate.y - camera - 48, 80, 48);
+    }
+    display(currentScore, "textContent", score());
+    display(hud["current-height"], "textContent", altitude() + " m");
+    display(bestScore, "textContent", Math.max(score(), records[0]?.score || 0));
+    display(hud["satiety-status"], "hidden", satiety === null);
+    display(hud["satiety-status"], "low", satiety !== null && satiety <= 4);
+    display(hud["satiety-meter"], "value", Math.ceil((satiety ?? 15) * 10) / 10);
+    display(hud["satiety-time"], "textContent", satiety === null ? "" : Math.ceil(satiety) + "s");
+    display(hud["combo-status"], "textContent", "连击 " + combo + " · ×" + Math.min(2, 1 + Math.floor(combo / 5) * .1).toFixed(1));
+    display(hud["event-status"], "hidden", !bonusGate);
+    display(hud["event-status"], "textContent", bonusGate ? "加分门 +50 · " + Math.ceil(bonusGate.until - gameTime) + "s" : "");
+    for (const { kind, button, label } of skillButtons) {
+        const charges = kind === "dash" ? player.dashCharges : kind === "feather" ? player.featherCharges : player.bootsCharges;
+        display(button, "hidden", !charges && !(kind === "spring-boots" && player.bootsArmed) && !(kind === "dash" && player.dashRemaining > 0));
+        display(button, "disabled", gameOver || !charges || (kind === "dash" && player.dashCooldown > 0) ||
+            (kind === "feather" && player.featherUsed) || (kind === "spring-boots" && player.bootsArmed));
+        display(label, "textContent", kind === "spring-boots" && player.bootsArmed ? "✓" : String(charges || 0));
+    }
+    for (const { kind, node } of effectBadges) {
+        const remaining = player[kind === "invulnerable" ? kind : kind + "Remaining"];
+        const duration = kind === "glide" ? 2.5 : kind === "magnet" ? 6 : 1;
+        display(node, "hidden", !remaining);
+        display(node, "textContent", (kind === "glide" ? "滑翔 " : kind === "magnet" ? "磁石 " : "无敌 ") + (Math.ceil(remaining * 10) / 10).toFixed(1) + "s");
+        display(node, "style", "--remaining:" + Math.ceil(remaining / duration * 20) * 5 + "%");
+    }
+}
+
+function updateBonusGate() {
+    if (!stageMode && altitude() >= nextGate) {
+        const target = platforms.find(platform => !platform.broken && !platform.hazard && platform.y < player.y - 60);
+        if (target) {
+            bonusGate = { x: Math.max(0, Math.min(width - 80, target.x + target.width / 2 - 40)), y: target.y - 25, until: gameTime + 8 };
+            nextGate = nextGate === 600 ? 1000 : nextGate === 1000 ? 1500 : Infinity;
+        }
+    }
+    if (!bonusGate) return;
+    if (gameTime >= bonusGate.until) { bonusGate = null; return; }
+    if (player.x + player.width > bonusGate.x && player.x < bonusGate.x + 80 && player.y < bonusGate.y && player.y + player.height > bonusGate.y - 48) {
+        award(50, bonusGate.x + 40, bonusGate.y); bonusGate = null;
     }
 }
 
 function frame(time) {
+    if (isPaused()) {
+        lastTime = undefined; accumulator = 0;
+        if (renderNeeded && !document.hidden) { draw(); renderNeeded = false; }
+        requestAnimationFrame(frame);
+        return;
+    }
     if (lastRegionName !== currentRegion().name) {
         lastRegionName = currentRegion().name;
         const celebration = document.getElementById("celebration");
@@ -1054,6 +1147,7 @@ function frame(time) {
         accumulator -= 1 / 120;
     }
     draw();
+    renderNeeded = false;
     requestAnimationFrame(frame);
 }
 
@@ -1066,7 +1160,7 @@ function steer(event) {
     document.getElementById("right").classList.toggle("pressed", direction === 1);
 }
 playfield.addEventListener("pointerdown", event => {
-    if (!assetsReady || gameOver || result.open || profile.open || event.target.closest(".hud, .skill-controls, .item-button, #ranking, dialog")) return;
+    if (!assetsReady || isPaused() || event.target.closest(".hud, .skill-controls, .item-button, #ranking, dialog")) return;
     event.preventDefault();
     playfield.setPointerCapture(event.pointerId);
     steer(event);
@@ -1126,7 +1220,7 @@ document.getElementById("hard-mode").addEventListener("change", event => {
 });
 
 document.addEventListener("keydown", event => {
-    if (!assetsReady || profile.open) return;
+    if (!assetsReady || profile.open || tutorial.open) return;
     if (event.target.matches("input, textarea")) return;
     if (event.code === "Space" && event.target.matches("button")) return;
     if (event.code === "Escape") { togglePause(); return; }
@@ -1144,7 +1238,8 @@ document.addEventListener("keydown", event => {
 });
 document.addEventListener("keyup", event => keys.delete(event.code));
 window.addEventListener("blur", clearControls);
-document.addEventListener("visibilitychange", clearControls);
+document.addEventListener("visibilitychange", () => { clearControls(); if (document.hidden) flushProgress(true); });
+window.addEventListener("pagehide", () => flushProgress(true));
 
 function togglePause() {
     if (!assetsReady || gameOver || result.open || profile.open) return;
@@ -1230,8 +1325,30 @@ document.getElementById("confirm-upload").addEventListener("click", uploadScore)
 document.getElementById("cancel-upload").addEventListener("click", () => uploadConfirm.close());
 uploadConfirm.addEventListener("cancel", event => { if (uploading) event.preventDefault(); });
 document.getElementById("play-again").addEventListener("click", restart);
-document.getElementById("close-result").addEventListener("click", () => result.close());
+document.getElementById("close-result").addEventListener("click", () => { if (gameOver) restart(); else result.close(); });
 result.addEventListener("close", clearControls);
+result.addEventListener("cancel", event => { if (gameOver) event.preventDefault(); });
+const tutorial = document.getElementById("tutorial");
+let tutorialStep = 0, tutorialSeen = false;
+try { tutorialSeen = localStorage.getItem("forest-hop-tutorial") === "1"; } catch {}
+const tutorialSteps = ["按住屏幕左半区或右半区移动，松手停止；电脑用方向键或 A / D。", "松鼠会自动起跳；踩黄色弹簧跳得更高，裂纹木板只能踩一次。", "收集道具后点右侧技能图标；冲刺 K、二段跳 F、弹簧靴 B。护心果自动救援。"];
+function showTutorial() {
+    if (!assetsReady || !hasNickname || tutorialSeen) return;
+    clearControls(); tutorialStep = 0; renderTutorial(); tutorial.showModal();
+}
+function renderTutorial() {
+    document.getElementById("tutorial-copy").textContent = (tutorialStep + 1) + " / 3 · " + tutorialSteps[tutorialStep];
+    document.getElementById("tutorial-next").textContent = tutorialStep === 2 ? "开始跳跃" : "下一步";
+}
+document.getElementById("tutorial-next").addEventListener("click", () => {
+    if (++tutorialStep < 3) { renderTutorial(); return; }
+    tutorialSeen = true;
+    try { localStorage.setItem("forest-hop-tutorial", "1"); } catch {}
+    tutorial.close(); clearControls();
+});
+tutorial.addEventListener("cancel", event => event.preventDefault());
+profile.addEventListener("close", () => { clearControls(); showTutorial(); });
+
 async function loadAssets() {
     const loading = document.getElementById("loading");
     const status = document.getElementById("loading-status");
@@ -1250,12 +1367,18 @@ async function loadAssets() {
         restart();
         loading.hidden = true;
         if (!hasNickname) showProfile();
+        else showTutorial();
         requestAnimationFrame(frame);
     } catch {
         status.textContent = "图片加载失败，请检查网络后重试";
         retry.hidden = false;
     }
 }
-window.addEventListener("resize", () => { if (assetsReady) resizeCanvas(); });
+window.addEventListener("resize", () => { if (assetsReady) { resizeCanvas(); renderNeeded = true; } });
 document.getElementById("retry-loading").addEventListener("click", loadAssets);
 loadAssets();
+
+// Offline installation requires HTTPS or localhost; file:// still works without it.
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(() => {}); });
+}

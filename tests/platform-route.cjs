@@ -10,7 +10,7 @@ const document = {
         if (!elements.has(id)) elements.set(id, {
             open: false, classList: { remove() {}, toggle() {} }, addEventListener() {}, setAttribute() {},
             getContext() { return {}; }, showModal() { this.open = true; }, close() { this.open = false; },
-            replaceChildren() {}, append() {}
+            querySelector() { return {}; }, replaceChildren() {}, append() {}
         });
         return elements.get(id);
     },

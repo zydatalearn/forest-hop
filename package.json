@@ -1,0 +1,9 @@
+{
+  "name": "forest-hop",
+  "version": "1.8.2",
+  "private": true,
+  "scripts": {
+    "test": "node scripts/test.cjs",
+    "build": "node scripts/build.cjs"
+  }
+}

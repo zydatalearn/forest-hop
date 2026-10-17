@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#513b27">
+    <link rel="manifest" href="manifest.webmanifest">
     <title>森林跃跃 · Forest Hop</title>
-    <link rel="stylesheet" href="src/style.css?v=1.8.1">
-    <script src="src/game.js?v=1.8.1" defer></script>
+    <link rel="stylesheet" href="src/style.css?v=1.8.2">
+    <script src="src/game.js?v=1.8.2" defer></script>
 </head>
 <body>
     <div id="loading" role="status" aria-live="polite">
@@ -19,9 +21,11 @@
             <button id="profile-button" aria-label="打开个人主页"><span id="player-name">森林旅人</span><small id="player-title">森林旅人</small></button>
             <button id="ranking" class="ranking-button">排行</button>
             <button id="pause-button" class="ranking-button" aria-label="暂停游戏">暂停</button>
-            <button id="music-button" class="ranking-button" aria-label="切换音乐">♫</button>
-            <div class="score-panel"><span>得分 <strong id="current-score">0</strong></span><small><span id="region-name">春日森林</span> · 高度 <b id="current-height">0 m</b> · 最高分 <b id="best-score">0</b></small><small id="satiety-status" hidden>饱食 <progress id="satiety-meter" max="15" value="15" aria-label="饱食度"></progress><span id="satiety-time"></span></small></div>
+            <button id="music-button" class="ranking-button" aria-label="切换旋律提示音">♫</button>
+            <div class="score-panel"><span>得分 <strong id="current-score">0</strong></span><small><span id="region-name">春日森林</span> · 高度 <b id="current-height">0 m</b> · 最高分 <b id="best-score">0</b></small><small id="combo-status">连击 0 · ×1.0</small><small id="satiety-status" hidden>饱食 <progress id="satiety-meter" max="15" value="15" aria-label="饱食度"></progress><span id="satiety-time"></span></small></div>
         </header>
+        <div class="effect-status" aria-label="生效中的技能"><span id="effect-glide" hidden></span><span id="effect-magnet" hidden></span><span id="effect-invulnerable" hidden></span></div>
+        <div id="event-status" hidden></div>
         <canvas id="board" aria-label="森林跃跃游戏"></canvas>
         <div class="skill-controls">
             <button class="item-button" id="skill-dash" hidden aria-label="冲刺，空格或 K"><img src="assets/images/runtime/dash.webp" alt=""><span>0</span></button>
@@ -32,11 +36,12 @@
             <button id="left" aria-label="向左">❮</button>
             <button id="right" aria-label="向右">❯</button>
         </div>
+        <dialog id="tutorial"><h1>欢迎来到森林</h1><p id="tutorial-copy" class="dialog-text"></p><div class="modal-actions"><button id="tutorial-next">下一步</button></div></dialog>
         <dialog id="pause-dialog">
             <h1>游戏暂停</h1>
             <p class="dialog-text">休息一下，准备继续跃上树梢。</p>
             <label class="setting-row"><input type="checkbox" id="sound-enabled" checked> 音效</label>
-            <label class="setting-row"><input type="checkbox" id="music-enabled" checked> 音乐</label>
+            <label class="setting-row"><input type="checkbox" id="music-enabled" checked> 旋律提示音</label>
             <div class="modal-actions"><button id="resume-game">继续游戏</button><button id="restart-paused">重新开始</button></div>
         </dialog>
         <dialog id="profile">
@@ -86,6 +91,7 @@
         <dialog id="result">
             <h1 id="result-title">游戏结束</h1>
             <div id="result-summary" aria-live="polite"></div>
+            <p id="death-tip" class="dialog-text"></p>
             <div id="run-stats" aria-live="polite"></div>
             <div id="stage-result" hidden><strong id="stage-stars"></strong><button id="retry-stage">重试关卡</button><button id="back-to-stages">选择关卡</button></div>
             <div class="ranking-tabs"><button id="local-ranking">本机</button><button id="online-ranking">联机</button></div>

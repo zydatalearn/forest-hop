@@ -187,3 +187,13 @@ dialog small { color: #8b724c; font-size: 11px; }
 .camp-choice button:disabled { cursor: default; }
 #camp-hint { display: block; margin-top: 5px; font-size: 10px; }
 #camp-hint[hidden] { display: none; }
+
+/* Keep small HUD labels legible on phones. */
+.hud small, #player-title, .score-panel, #satiety-status, .skill-controls::before { font-size: 12px; }
+.hud { grid-template-columns: minmax(70px, 1fr) auto auto auto; }
+.score-panel { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; white-space: normal; }
+#playfield { width: min(100vw, calc((100dvh - 124px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * .625)); }
+.effect-status { position: absolute; top: 28%; left: 3%; display: flex; gap: 5px; pointer-events: none; z-index: 2; }
+.effect-status span { padding: 8px 5px; border-radius: 50%; color: #fff8dc; font-size: 12px; background: conic-gradient(#669a45 var(--remaining), #513b27cc 0); border: 2px solid #fff3c3; }
+.effect-status [hidden] { display: none; }
+#event-status { position: absolute; top: 22%; left: 15%; right: 15%; text-align: center; background: #513b27dd; color: #ffe18a; border-radius: 12px; padding: 6px; font-size: 13px; pointer-events: none; z-index: 2; }
